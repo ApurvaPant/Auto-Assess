@@ -23,7 +23,7 @@ AutoAssess is a full-stack automated grading system designed for computer scienc
 
 * **Frontend:** React (Vite), Tailwind CSS, Headless UI, Chart.js, Monaco Editor.
 * **Backend:** Python 3.11, FastAPI, SQLModel (SQLAlchemy), Uvicorn.
-* **AI Engine:** Google Gemini 1.5 Flash (for content gen) & Pro (for code quality analysis).
+* **AI Engine:** Google Gemini 3.0 Flash (for content gen) & Pro (for code quality analysis).
 * **Database:** PostgreSQL 15.
 * **DevOps:** Docker & Docker Compose (One-command setup).
 
