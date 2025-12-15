@@ -13,7 +13,7 @@ $$S_{final} = \max\left(0, \min\left(100, \alpha \cdot S_{test} + \beta \cdot S_
 | Variable | Name | Description | Range | Source |
 | :--- | :--- | :--- | :--- | :--- |
 | **$S_{test}$** | Raw Test Score | Percentage of hidden test cases passed. | $0 - 100$ | Python Runtime Sandbox |
-| **$S_{quality}$** | Quality Score | AI assessment of readability, PEP-8 compliance, and efficiency. | $0 - 100$ | Gemini 1.5 Pro |
+| **$S_{quality}$** | Quality Score | AI assessment of readability, PEP-8 compliance, and efficiency. | $0 - 100$ | Gemini 3.0 Pro |
 | **$P_{error}$** | Error Penalty | Severity score based on the *type* of runtime error (if any). | $0 - 5$ | Log Analysis |
 | **$\alpha$** | Test Weight | Importance given to functional correctness. | $0.0 - 1.0$ | **Teacher Configurable** |
 | **$\beta$** | Quality Weight | Importance given to code style/efficiency. | $0.0 - 1.0$ | **Teacher Configurable** |
