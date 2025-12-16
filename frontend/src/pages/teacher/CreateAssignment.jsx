@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
-import { getPackages, createAssignment } from '../../api';
+import { getPackages, createAssignment } from '../../api/client';
 import toast from 'react-hot-toast';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Badge } from '../../components/ui/Badge';
+import { CheckCircle } from 'lucide-react';
+
+const getDifficultyBadge = (difficulty) => {
+    const colors = {
+        easy: 'bg-success/20 text-success border-success/30',
+        medium: 'bg-warning/20 text-warning border-warning/30',
+        hard: 'bg-error/20 text-error border-error/30'
+    };
+    return colors[difficulty] || colors.easy;
+};
 
 export default function CreateAssignment() {
     const [packages, setPackages] = useState([]);
@@ -51,43 +65,75 @@ export default function CreateAssignment() {
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Create New Assignment</h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Select packages to include. The system will auto-distribute them to all students.</p>
-            
-            <form onSubmit={handleSubmit} className="mt-6">
-                <div>
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Assignment Name</label>
-                    <input 
-                        type="text" 
+        <Card className="shadow-soft">
+            <CardHeader>
+                <CardTitle className="text-xl text-text-primary">Create New Assignment</CardTitle>
+                <p className="text-sm text-text-muted">Select packages to include. The system will auto-distribute them to all students.</p>
+            </CardHeader>
+            <CardContent>
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <Input
+                        label="Assignment Name"
+                        type="text"
                         placeholder="e.g., Midterm Practice 1"
-                        className="mt-1 block w-full max-w-xs px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" 
+                        className="max-w-md"
                         value={assignmentName}
                         onChange={(e) => setAssignmentName(e.target.value)}
                     />
-                </div>
 
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mt-8">Available Packages ({packages.length})</h3>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-4 bg-gray-100 dark:bg-gray-900 rounded-lg border dark:border-gray-700">
-                    {packages.length === 0 && <p className="text-gray-500 dark:text-gray-400 col-span-full text-center py-4">No packages found. Try generating some on the 'Generate' page.</p>}
-                    {packages.map((pkg) => (
-                         <div 
-                            key={pkg.id} 
-                            className={`p-4 bg-white dark:bg-gray-800 border rounded-lg cursor-pointer transition-all ${selectedPackages.has(pkg.id) ? 'border-accent ring-2 ring-accent' : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'}`} 
-                            onClick={() => handleSelectPackage(pkg.id)}
-                         >
-                            <h4 className="font-semibold text-gray-800 dark:text-gray-200">{pkg.title || '[Untitled Question]'}</h4>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{pkg.difficulty}</p>
+                    <div>
+                        <h3 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+                            Available Packages
+                            <span className="text-sm font-normal text-text-muted">({packages.length})</span>
+                        </h3>
+
+                        {/* Minimal scrollbar container */}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto p-4 bg-background/50 rounded-xl border border-white/5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10 hover:scrollbar-thumb-white/20">
+                            {packages.length === 0 && (
+                                <p className="text-text-muted col-span-full text-center py-8">
+                                    No packages found. Try generating some on the 'Generate' page.
+                                </p>
+                            )}
+                            {packages.map((pkg) => (
+                                <div
+                                    key={pkg.id}
+                                    className={`p-4 bg-surface rounded-lg cursor-pointer transition-all border-2 ${selectedPackages.has(pkg.id)
+                                            ? 'border-primary ring-2 ring-primary/20 shadow-lg shadow-primary/10'
+                                            : 'border-transparent hover:border-white/10'
+                                        }`}
+                                    onClick={() => handleSelectPackage(pkg.id)}
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-semibold text-text-primary truncate">
+                                                {pkg.title || '[Untitled Question]'}
+                                            </h4>
+                                            <div className="flex items-center gap-2 mt-2">
+                                                {/* Colored difficulty badge */}
+                                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${getDifficultyBadge(pkg.difficulty)}`}>
+                                                    {pkg.difficulty}
+                                                </span>
+                                                <span className="text-xs text-text-muted">
+                                                    {pkg.testcases?.length || 0} tests
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {selectedPackages.has(pkg.id) && (
+                                            <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
+                    </div>
 
-                <div className="mt-8 flex justify-end">
-                    <button type="submit" className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-accent-hover disabled:opacity-50" disabled={loading}>
-                        {loading ? 'Creating...' : `Create Assignment (${selectedPackages.size} selected)`}
-                    </button>
-                </div>
-            </form>
-        </div>
+                    <div className="flex justify-end pt-4">
+                        <Button type="submit" isLoading={loading} className="shadow-lg shadow-primary/25">
+                            Create Assignment ({selectedPackages.size} selected)
+                        </Button>
+                    </div>
+                </form>
+            </CardContent>
+        </Card>
     );
 }

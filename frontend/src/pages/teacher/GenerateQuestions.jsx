@@ -1,198 +1,29 @@
 import { useState, useEffect } from 'react';
-import { generateQuestions, getPackages, generateQuestionsFromText, generateQuestionsFromFile } from '../../api';
+import { generateQuestions, getPackages, generateQuestionsFromText, generateQuestionsFromFile } from '../../api/client';
 import toast from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Badge } from '../../components/ui/Badge';
+import { Loader2, Upload, FileText, Type, ChevronRight, ChevronDown } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
-// --- Tab Button Component ---
-const TabButton = ({ isActive, onClick, children }) => (
-    <button
-        onClick={onClick}
-        className={`px-4 py-2 font-medium text-sm rounded-t-lg border-b-2
-            ${isActive 
-                ? 'text-accent border-accent' 
-                : 'text-gray-400 border-transparent hover:text-gray-200 hover:border-gray-600'
-            }`}
-    >
-        {children}
-    </button>
-);
+export default function GenerateQuestions() {
+    const [availablePackages, setAvailablePackages] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState('topic'); // 'topic', 'text', 'file'
 
-// --- Form for generating from simple topic ---
-const GenerateFromTopic = ({ setLoading, setAvailablePackages }) => {
+    // Form States
     const [topic, setTopic] = useState('basic list manipulation');
-    const [difficulty, setDifficulty] = useState('easy');
-    const [nQuestions, setNQuestions] = useState(5);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            // This now uses the original endpoint, which we should rename for clarity,
-            // but for now, let's use the text endpoint as a proxy.
-            const response = await generateQuestions(topic, difficulty, nQuestions);
-            setAvailablePackages(prev => [...prev, ...response.data]);
-            toast.success(`Generated and saved ${response.data.length} new packages!`);
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to generate questions.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-                <label className="text-sm font-medium text-gray-300">Topic</label>
-                <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Difficulty</label>
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent">
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Number of Questions</label>
-                <input type="number" min="1" max="20" value={nQuestions} onChange={(e) => setNQuestions(parseInt(e.target.value, 10) || 1)} required className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-            </div>
-            <div>
-                <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent disabled:opacity-50">
-                    Generate & Save
-                </button>
-            </div>
-        </form>
-    );
-};
-
-// --- Form for generating from long text ---
-const GenerateFromText = ({ setLoading, setAvailablePackages }) => {
     const [text, setText] = useState('');
-    const [difficulty, setDifficulty] = useState('easy');
-    const [nQuestions, setNQuestions] = useState(5);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            const response = await generateQuestionsFromText(text, difficulty, nQuestions);
-            setAvailablePackages(prev => [...prev, ...response.data]);
-            toast.success(`Generated and saved ${response.data.length} new packages!`);
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to generate questions.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-                <label className="text-sm font-medium text-gray-300">Syllabus Text</label>
-                <textarea
-                    rows="8"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    required
-                    className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent"
-                    placeholder="Paste your syllabus, notes, or any block of text here..."
-                />
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Difficulty</label>
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent">
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Number of Questions</label>
-                <input type="number" min="1" max="20" value={nQuestions} onChange={(e) => setNQuestions(parseInt(e.target.value, 10) || 1)} required className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-            </div>
-            <div>
-                <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent disabled:opacity-50">
-                    Generate from Text
-                </button>
-            </div>
-        </form>
-    );
-};
-
-// --- Form for generating from file ---
-const GenerateFromFile = ({ setLoading, setAvailablePackages }) => {
     const [file, setFile] = useState(null);
     const [difficulty, setDifficulty] = useState('easy');
     const [nQuestions, setNQuestions] = useState(5);
 
-    const handleFileChange = (e) => {
-        setFile(e.target.files[0]);
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!file) {
-            toast.error("Please select a file to upload.");
-            return;
-        }
-        setLoading(true);
-        try {
-            const response = await generateQuestionsFromFile(file, nQuestions, difficulty);
-            setAvailablePackages(prev => [...prev, ...response.data]);
-            toast.success(`Generated and saved ${response.data.length} new packages from file!`);
-            setFile(null); // Clear file input
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to generate from file.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-                <label className="text-sm font-medium text-gray-300">Syllabus File (PDF or Image)</label>
-                <input 
-                    type="file" 
-                    onChange={handleFileChange} 
-                    accept="application/pdf,image/*" 
-                    required 
-                    className="mt-1 block w-full text-sm text-gray-400
-                               file:mr-4 file:py-2 file:px-4
-                               file:rounded-md file:border-0
-                               file:text-sm file:font-semibold
-                               file:bg-gray-700 file:text-gray-200
-                               hover:file:bg-gray-600"
-                />
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Difficulty</label>
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent">
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
-            </div>
-            <div>
-                <label className="text-sm font-medium text-gray-300">Number of Questions</label>
-                <input type="number" min="1" max="20" value={nQuestions} onChange={(e) => setNQuestions(parseInt(e.target.value, 10) || 1)} required className="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-            </div>
-            <div>
-                <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent disabled:opacity-50">
-                    Upload & Generate
-                </button>
-            </div>
-        </form>
-    );
-};
-
-
-// --- Main Page Component (Updated) ---
-export default function GenerateQuestions() {
-    const [availablePackages, setAvailablePackages] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState('topic'); // 'topic', 'text', or 'file'
+    useEffect(() => {
+        fetchExistingPackages();
+    }, []);
 
     const fetchExistingPackages = async () => {
         try {
@@ -203,69 +34,196 @@ export default function GenerateQuestions() {
         }
     };
 
-    useEffect(() => {
-        fetchExistingPackages();
-    }, []);
+    const handleGenerate = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            let response;
+            if (activeTab === 'topic') {
+                response = await generateQuestions(topic, difficulty, nQuestions);
+            } else if (activeTab === 'text') {
+                response = await generateQuestionsFromText(text, difficulty, nQuestions);
+            } else if (activeTab === 'file') {
+                if (!file) throw new Error("Please upload a file.");
+                response = await generateQuestionsFromFile(file, nQuestions, difficulty);
+            }
+
+            setAvailablePackages(prev => [...response.data, ...prev]); // Prepend new
+            toast.success(`Generated ${response.data.length} questions!`);
+            // Reset fields
+            if (activeTab === 'file') setFile(null);
+            if (activeTab === 'text') setText('');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || error.message || 'Generation failed.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const TabButton = ({ id, label, icon: Icon }) => (
+        <button
+            onClick={() => setActiveTab(id)}
+            className={cn(
+                "flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-all rounded-md flex-1",
+                activeTab === id
+                    ? "bg-primary text-white shadow-md shadow-primary/20"
+                    : "text-text-muted hover:bg-surface hover:text-text-primary"
+            )}
+        >
+            <Icon className="h-4 w-4" />
+            <span>{label}</span>
+        </button>
+    );
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1 bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-                
-                {/* --- TAB UI --- */}
-                <div className="border-b border-gray-700 mb-6">
-                    <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                        <TabButton isActive={activeTab === 'topic'} onClick={() => setActiveTab('topic')}>
-                            Topic
-                        </TabButton>
-                        <TabButton isActive={activeTab === 'text'} onClick={() => setActiveTab('text')}>
-                            From Text
-                        </TabButton>
-                        <TabButton isActive={activeTab === 'file'} onClick={() => setActiveTab('file')}>
-                            From File
-                        </TabButton>
-                    </nav>
-                </div>
-
-                {/* --- RENDER ACTIVE TAB --- */}
-                {loading && (
-                    <div className="text-center p-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto"></div>
-                        <p className="mt-2 text-sm text-gray-400">Generating...</p>
-                    </div>
-                )}
-                <div style={{ display: loading ? 'none' : 'block' }}>
-                    {activeTab === 'topic' && (
-                        <GenerateFromTopic setLoading={setLoading} setAvailablePackages={setAvailablePackages} />
-                    )}
-                    {activeTab === 'text' && (
-                        <GenerateFromText setLoading={setLoading} setAvailablePackages={setAvailablePackages} />
-                    )}
-                    {activeTab === 'file' && (
-                        <GenerateFromFile setLoading={setLoading} setAvailablePackages={setAvailablePackages} />
-                    )}
-                </div>
+        <div className="space-y-8">
+            <div className="flex flex-col gap-2">
+                <h1 className="text-3xl font-bold tracking-tight text-white">Question Generator</h1>
+                <p className="text-text-muted">Create new coding problems using AI.</p>
             </div>
 
-            <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-                 <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Available Packages</h2>
-                 <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                    {availablePackages.length === 0 && !loading && <p className="text-gray-500 dark:text-gray-400">No packages available. Generate some new ones!</p>}
-                    {availablePackages.map((pkg, index) => (
-                        <details key={pkg.id || index} className="border border-gray-200 dark:border-gray-700 rounded-lg">
-                            <summary className="cursor-pointer p-4 font-medium text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">{pkg.title || '[Untitled Question]'}</summary>
-                            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                                <div className="prose prose-sm md:prose-base prose-invert max-w-none text-gray-300 prose-headings:text-gray-100 prose-strong:text-gray-100 prose-code:text-amber-400">
-                                    <ReactMarkdown>{pkg.prompt}</ReactMarkdown>
-                                </div>
-                                <h4 className="font-semibold mt-3 dark:text-gray-200">Test Cases ({pkg.testcases?.length || 0}):</h4>
-                                <ul className="list-disc list-inside text-sm text-gray-500 dark:text-gray-400">
-                                    {pkg.testcases?.map((tc, i) => <li key={tc.id || i}>{tc.type} - {tc.points} pts</li>)}
-                                </ul>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* --- Left Column: Generator Controls --- */}
+                <div className="lg:col-span-4 space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <div className="flex space-x-2 bg-background/50 p-1 rounded-lg border border-gray-800">
+                                <TabButton id="topic" label="Topic" icon={Type} />
+                                <TabButton id="text" label="Text" icon={FileText} />
+                                <TabButton id="file" label="File" icon={Upload} />
                             </div>
-                        </details>
-                    ))}
-                 </div>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={handleGenerate} className="space-y-4">
+
+                                {activeTab === 'topic' && (
+                                    <Input
+                                        label="Topic"
+                                        value={topic}
+                                        onChange={(e) => setTopic(e.target.value)}
+                                        placeholder="e.g. Recursion"
+                                        required
+                                    />
+                                )}
+
+                                {activeTab === 'text' && (
+                                    <div className="w-full">
+                                        <label className="mb-2 block text-sm font-medium text-text-muted">Syllabus Text</label>
+                                        <textarea
+                                            value={text}
+                                            onChange={(e) => setText(e.target.value)}
+                                            rows={6}
+                                            required
+                                            className="flex w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+                                            placeholder="Paste text here..."
+                                        />
+                                    </div>
+                                )}
+
+                                {activeTab === 'file' && (
+                                    <div className="w-full">
+                                        <label className="mb-2 block text-sm font-medium text-text-muted">Upload (PDF/Image)</label>
+                                        <Input
+                                            type="file"
+                                            accept=".pdf,image/*"
+                                            onChange={(e) => setFile(e.target.files[0])}
+                                            required
+                                            className="cursor-pointer file:cursor-pointer"
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="w-full">
+                                        <label className="mb-2 block text-sm font-medium text-text-muted">Difficulty</label>
+                                        <select
+                                            value={difficulty}
+                                            onChange={(e) => setDifficulty(e.target.value)}
+                                            className="flex h-10 w-full rounded-lg border border-gray-700 bg-surface px-3 pr-8 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239CA3AF%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat"
+                                        >
+                                            <option value="easy" className="bg-surface rounded-lg">Easy</option>
+                                            <option value="medium" className="bg-surface rounded-lg">Medium</option>
+                                            <option value="hard" className="bg-surface rounded-lg">Hard</option>
+                                        </select>
+                                    </div>
+                                    <Input
+                                        label="Count"
+                                        type="number"
+                                        min="1" max="20"
+                                        value={nQuestions}
+                                        onChange={(e) => setNQuestions(parseInt(e.target.value) || 1)}
+                                        required
+                                    />
+                                </div>
+
+                                <Button type="submit" className="w-full" isLoading={loading}>
+                                    Generate
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* --- Right Column: Available Packages --- */}
+                <div className="lg:col-span-8 space-y-6">
+                    <Card className="min-h-[500px] border-none bg-transparent shadow-none">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-semibold text-white">Generated Packages</h2>
+                            <Badge variant="outline" className="text-text-muted border-gray-700">
+                                {availablePackages.length} Total
+                            </Badge>
+                        </div>
+
+                        <div className="space-y-4">
+                            {availablePackages.length === 0 && !loading && (
+                                <div className="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
+                                    <p className="text-text-muted">No packages yet. Generate some!</p>
+                                </div>
+                            )}
+
+                            {availablePackages.map((pkg, index) => (
+                                <PackageItem key={pkg.id || index} pkg={pkg} />
+                            ))}
+                        </div>
+                    </Card>
+                </div>
             </div>
         </div>
     );
 }
+
+const PackageItem = ({ pkg }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="rounded-lg border border-gray-800 bg-surface overflow-hidden transition-all duration-200 hover:border-gray-700">
+            <div
+                className="flex items-center justify-between p-4 cursor-pointer bg-surface hover:bg-gray-800/50"
+                onClick={() => setIsOpen(!isOpen)}
+            >
+                <div className="flex items-center space-x-4">
+                    <div className={cn("p-2 rounded-full bg-primary/10 text-primary transition-transform duration-200", isOpen && "rotate-90")}>
+                        <ChevronRight className="h-4 w-4" />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-semibold text-white">{pkg.title || 'Untitled Question'}</h3>
+                        <div className="flex items-center space-x-2 mt-1">
+                            <Badge variant={pkg.difficulty === 'hard' ? 'error' : pkg.difficulty === 'medium' ? 'warning' : 'success'}>
+                                {pkg.difficulty}
+                            </Badge>
+                            <span className="text-xs text-text-muted">{pkg.testcases?.length || 0} Test Cases</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {isOpen && (
+                <div className="p-4 pt-0 border-t border-gray-800/50 bg-gray-900/30">
+                    <div className="prose prose-invert prose-sm max-w-none mt-4 text-gray-300">
+                        <ReactMarkdown>{pkg.prompt}</ReactMarkdown>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

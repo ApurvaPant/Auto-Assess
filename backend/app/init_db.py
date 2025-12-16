@@ -50,7 +50,8 @@ async def initialize_database():
             teacher_code = models.TeacherCode(
                 hashed_code=hashed_code,
                 student_id=student.id, # Link code to the student
-                is_used=False
+                is_used=False,
+                uses_remaining=2  # New: code can be used twice
             )
             session.add(teacher_code)
             

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { changeStudentDob } from '../api';
+import { changeStudentDob } from '../api/client';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 

@@ -1,17 +1,32 @@
 import { useEffect, useState } from 'react';
-import { getTeacherCodes } from '../../api';
+import { getTeacherCodes } from '../../api/client';
 import toast from 'react-hot-toast';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { CheckCircle, XCircle, Copy, Key } from 'lucide-react';
 
-// Helper component for each code line
-const CodeLine = ({ codeLine, mode }) => {
+// Helper component for each code row
+const CodeRow = ({ codeLine, mode }) => {
     const [isUsed, setIsUsed] = useState(false);
-    
-    // Parse the line to check 'Used' status
+    const [rollNo, setRollNo] = useState('');
+    const [name, setName] = useState('');
+    const [usesRemaining, setUsesRemaining] = useState(2);
+
     useEffect(() => {
-        if (mode === 'production' && codeLine.includes('Used: True')) {
+        // Parse Roll - works for both formats
+        const rollMatch = codeLine.match(/Roll:\s*(\d+)/);
+        if (rollMatch) setRollNo(rollMatch[1]);
+
+        // Parse Name - for production mode (Name:) or Username for plaintext mode
+        const nameMatch = codeLine.match(/(?:Name|Username):\s*([^|]+)/);
+        if (nameMatch) setName(nameMatch[1].trim());
+
+        // Parse Uses remaining (production mode format: "Uses: X/2")
+        const usesMatch = codeLine.match(/Uses:\s*(\d+)\/2/);
+        if (usesMatch) setUsesRemaining(parseInt(usesMatch[1]));
+
+        // Check for used status - only in production mode (has "Used:" field)
+        if (mode === 'production' && codeLine.toLowerCase().includes('used: true')) {
             setIsUsed(true);
-        } else if (mode === 'plaintext' && codeLine.startsWith('Roll:')) {
-            // In dev mode, we just show the code
         }
     }, [codeLine, mode]);
 
@@ -20,39 +35,55 @@ const CodeLine = ({ codeLine, mode }) => {
         toast.success('Code copied!');
     };
 
-    // Attempt to parse the line for better formatting
-    let displayLine = codeLine;
+    // Extract plain code for copy
     let codeToCopy = codeLine;
     if (mode === 'plaintext' && codeLine.includes('|')) {
         const parts = codeLine.split('|').map(s => s.trim());
         if (parts.length === 3) {
-            displayLine = `${parts[0]} | ${parts[1]} | ${parts[2]}`;
-            codeToCopy = parts[2].replace('Code: ', ''); // Just copy the code
+            codeToCopy = parts[2].replace('Code: ', '');
         }
     }
 
     return (
-        <div className={`flex justify-between items-center p-2 rounded ${isUsed ? 'opacity-50' : 'opacity-100'}`}>
-            <pre className="text-sm text-gray-800 dark:text-gray-200">
-                <code>{displayLine}</code>
-            </pre>
-            <div className="flex items-center space-x-3">
+        <tr className={`border-b border-white/5 ${isUsed ? 'opacity-60' : ''}`}>
+            <td className="py-3 px-4 text-sm text-text-primary font-mono">{rollNo || '—'}</td>
+            <td className="py-3 px-4 text-sm text-text-muted">{name || '—'}</td>
+            <td className="py-3 px-4 text-center">
                 {mode === 'production' ? (
-                    isUsed ? (
-                        <span title="Code has been used" className="text-xl">✅</span>
-                    ) : (
-                        <span title="Code not used" className="text-xl">❌</span>
-                    )
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${usesRemaining === 2 ? 'bg-success/10 text-success' :
+                        usesRemaining === 1 ? 'bg-warning/10 text-warning' :
+                            'bg-error/10 text-error'
+                        }`}>
+                        {usesRemaining}/2 uses left
+                    </span>
                 ) : (
-                    <button 
-                        onClick={() => handleCopy(codeToCopy)} 
-                        className="text-xs text-gray-400 hover:text-accent"
+                    <span className="text-xs text-text-muted">Dev Mode</span>
+                )}
+            </td>
+            <td className="py-3 px-4 text-center">
+                {isUsed ? (
+                    <span className="inline-flex items-center gap-1 text-success">
+                        <CheckCircle className="h-5 w-5" />
+                        <span className="text-xs">Changed</span>
+                    </span>
+                ) : (
+                    <span className="inline-flex items-center gap-1 text-text-muted">
+                        <XCircle className="h-5 w-5 opacity-50" />
+                        <span className="text-xs">Pending</span>
+                    </span>
+                )}
+            </td>
+            <td className="py-3 px-4 text-right">
+                {mode === 'plaintext' && (
+                    <button
+                        onClick={() => handleCopy(codeToCopy)}
+                        className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
                     >
-                        Copy Code
+                        <Copy className="h-3 w-3" /> Copy
                     </button>
                 )}
-            </div>
-        </div>
+            </td>
+        </tr>
     );
 };
 
@@ -76,34 +107,53 @@ export default function ViewCodes() {
     }, []);
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Student Password Codes</h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                A unique, single-use code has been generated for each student.
-            </p>
-            
-            {loading ? (
-                <div className="text-center p-8"><p className="text-gray-500 dark:text-gray-400">Loading codes...</p></div>
-            ) : (
-                <div className="mt-6">
-                    {codesData.mode === 'plaintext' && (
-                        <div className="p-4 mb-4 text-sm text-blue-800 dark:text-blue-200 rounded-lg bg-blue-50 dark:bg-gray-900 border border-blue-300 dark:border-blue-800" role="alert">
-                            Displaying plaintext codes from seed file.
-                        </div>
-                    )}
-                    {codesData.mode === 'production' && (
-                        <div className="p-4 mb-4 text-sm text-yellow-800 dark:text-yellow-200 rounded-lg bg-yellow-50 dark:bg-gray-900 border border-yellow-300 dark:border-yellow-800" role="alert">
-                            Displaying live status from database. Codes will appear 'Used' after a student changes their password.
-                        </div>
-                    )}
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight text-text-primary">Student Password Codes</h1>
+                <p className="text-text-muted mt-1">Manage single-use codes for student password changes.</p>
+            </div>
 
-                    <div className="space-y-1 max-h-96 overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                        {codesData.codes.map((codeLine, index) => (
-                            <CodeLine key={index} codeLine={codeLine} mode={codesData.mode} />
-                        ))}
+            <Card className="border-none shadow-soft bg-surface">
+                <CardHeader className="border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                            <Key className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <CardTitle className="text-text-primary">Password Reset Codes</CardTitle>
+                            <p className="text-xs text-text-muted">
+                                {codesData.mode === 'plaintext' ? 'Development mode - showing seed codes' : 'Live database status'}
+                            </p>
+                        </div>
                     </div>
-                </div>
-            )}
+                </CardHeader>
+                <CardContent className="p-0">
+                    {loading ? (
+                        <div className="text-center py-12">
+                            <p className="text-text-muted">Loading codes...</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="text-left text-xs uppercase tracking-wider text-text-muted bg-surface-dark/50">
+                                        <th className="py-3 px-4 font-medium">Roll No</th>
+                                        <th className="py-3 px-4 font-medium">Name</th>
+                                        <th className="py-3 px-4 font-medium text-center">Uses Left</th>
+                                        <th className="py-3 px-4 font-medium text-center">Status</th>
+                                        <th className="py-3 px-4 font-medium text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {codesData.codes.map((codeLine, index) => (
+                                        <CodeRow key={index} codeLine={codeLine} mode={codesData.mode} />
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     );
 }
