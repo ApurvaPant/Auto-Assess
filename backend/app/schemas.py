@@ -1,16 +1,23 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime
-# We need to import the base model to avoid circular import issues
-from sqlmodel import SQLModel 
+from sqlmodel import SQLModel
 
-# Create a slim version of TestCase for schema use
 class TestCase(SQLModel):
     id: Optional[int] = None
     type: str
     input: str
     expected: str
     points: int
+
+class PackageWithTestcases(BaseModel):
+    id: int
+    title: str
+    prompt: str
+    difficulty: str
+    testcases: List[TestCase] = []
+    class Config:
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
@@ -33,6 +40,11 @@ class GenerateFromTextRequest(BaseModel):
 class AssignmentCreate(BaseModel):
     assignment_name: str
     package_ids: List[int] = Field(min_length=1)
+
+class ReleaseResultsRequest(BaseModel):
+    alpha: float = Field(ge=0.0, le=1.0)
+    beta: float = Field(ge=0.0, le=1.0)
+    gamma: float = Field(ge=0.0)
 
 class SubmissionCreate(BaseModel):
     roll: int
@@ -72,34 +84,36 @@ class SubmissionResult(BaseModel):
     class Config:
         from_attributes = True
 
-# --- THIS SCHEMA IS UPDATED ---
 class StudentAssignmentPublic(BaseModel):
     assignment_name: str
     package_title: str
     package_prompt: str
     sample_testcases: List[TestCase]
-    # This field will lock the editor if true
     has_submitted: bool = False
-    # Add this field to lock if results are out
     results_released: bool = False
     
 class StudentLogin(BaseModel):
     roll: int
     dob: str
 
-# --- THIS SCHEMA IS UPDATED ---
 class StudentAssignmentDetails(BaseModel):
     assignment_id: int
     assignment_name: str
     package_title: str
     has_submitted: bool
     results_released: bool
-    final_score: Optional[float] = None # Only show score if released
+    final_score: Optional[float] = None
 
 class DobChangeRequest(BaseModel):
     roll: int
-    new_dob: str
+    new_dob: str # YYYY-MM-DD
     code: str
+    name: Optional[str] = None # Added optional name update
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    new_dob: Optional[str] = None
+    code: Optional[str] = None
 
 class TeacherCodeResponse(BaseModel):
     codes: List[str]

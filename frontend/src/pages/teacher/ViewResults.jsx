@@ -1,121 +1,117 @@
 import { useEffect, useState } from 'react';
-import { getAssignments, getResults, releaseResults } from '../../api';
+import { getAssignments, getResults, releaseResults, getCodeAnalysis } from '../../api/client';
 import toast from 'react-hot-toast';
-import { Bar } from 'react-chartjs-2';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { X, Eye, BarChart3, Sparkles, ThumbsUp, ThumbsDown, Lightbulb } from 'lucide-react';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-// --- MODAL COMPONENT ---
 const SubmissionModal = ({ submission, onClose }) => {
-    if (!submission) return null;
+    const [analysis, setAnalysis] = useState(null);
+    const [analyzing, setAnalyzing] = useState(false);
 
-    const chartData = {
-        labels: ['Scores'],
-        datasets: [
-            {
-                label: 'Test Score',
-                data: [submission.raw_test_score],
-                backgroundColor: 'rgba(75, 192, 192, 0.6)',
-            },
-            {
-                label: 'Quality Score',
-                data: [submission.quality_score],
-                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-            },
-            {
-                label: 'Error Penalty',
-                data: [-submission.error_penalty],
-                backgroundColor: 'rgba(255, 99, 132, 0.6)',
-            },
-        ],
-    };
-
-    const chartOptions = {
-        responsive: true,
-        plugins: {
-            legend: { position: 'top', labels: { color: '#ccc' } },
-            title: { display: true, text: 'Score Composition', color: '#ccc' },
-        },
-        scales: { 
-            y: { 
-                beginAtZero: true, 
-                ticks: { color: '#ccc' },
-                grid: { color: 'rgba(255, 255, 255, 0.1)'} 
-            },
-            x: {
-                ticks: { color: '#ccc' },
-                grid: { color: 'rgba(255, 255, 255, 0.1)'}
-            }
+    const handleAnalyze = async () => {
+        if (!submission?.id) return;
+        setAnalyzing(true);
+        try {
+            const res = await getCodeAnalysis(submission.id);
+            setAnalysis(res.data);
+        } catch (error) {
+            toast.error("Failed to analyze code");
+        } finally {
+            setAnalyzing(false);
         }
     };
 
-    const passedTests = submission.test_results.filter(r => r.passed).length;
-    const totalTests = submission.test_results.length;
-
+    if (!submission) return null;
     return (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity z-10 flex justify-center items-center p-4">
-            <div className="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl">
-                <div className="bg-white dark:bg-gray-800 px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-                    <h3 className="text-lg font-semibold leading-6 text-gray-900 dark:text-gray-100" id="modal-title">
-                        Submission Details (Roll: {submission.roll}, Final Score: {submission.final_score.toFixed(2)})
-                    </h3>
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto p-2">
-                        {/* Left Column */}
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Submitted Code:</h4>
-                                <div className="mt-2 font-mono text-sm bg-gray-900 text-white p-4 rounded-md overflow-x-auto">
-                                    <pre><code>{submission.code}</code></pre>
-                                </div>
-                            </div>
-                             <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">AI Quality Comments:</h4>
-                                <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                    {submission.quality_comments.map((c, i) => <li key={i}>{c}</li>)}
-                                </ul>
-                            </div>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <Card className="max-w-3xl w-full max-h-[85vh] overflow-y-auto border-none shadow-2xl bg-surface">
+                <CardHeader className="border-b border-white/5 flex flex-row items-center justify-between">
+                    <CardTitle className="text-xl text-primary">Roll {submission.roll}</CardTitle>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10 transition-colors">
+                        <X className="h-5 w-5 text-text-muted" />
+                    </button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div>
+                        <label className="text-xs text-text-muted uppercase tracking-wider mb-2 block">Submitted Code</label>
+                        <pre className="bg-background/50 border border-white/10 p-4 rounded-lg text-sm overflow-x-auto text-text-primary font-mono max-h-48">{submission.code}</pre>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-primary">{submission.raw_test_score.toFixed(1)}</p>
+                            <p className="text-xs text-text-muted">Test Score</p>
                         </div>
-                        {/* Right Column */}
-                        <div className="space-y-4">
-                             <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Test Case Breakdown ({passedTests}/{totalTests} Passed):</h4>
-                                <div className="mt-2 space-y-2 text-sm">
-                                    {submission.test_results.map((res, i) => (
-                                        <p key={i} className={res.passed ? 'text-green-500' : 'text-red-500'}>
-                                            Test Case {i + 1} ({res.type}): {res.passed ? 'Passed' : 'Failed'}
-                                        </p>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Error Analysis:</h4>
-                                {Object.keys(submission.error_counts).length > 0 ? (
-                                    <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                        {Object.entries(submission.error_counts).map(([error, count]) => (
-                                            <li key={error}>{error}: {count} instance(s)</li>
-                                        ))}
-                                    </ul>
-                                ) : <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">No errors detected.</p>}
-                            </div>
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Score Graph:</h4>
-                                <Bar options={chartOptions} data={chartData} />
-                            </div>
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-secondary">{submission.quality_score}</p>
+                            <p className="text-xs text-text-muted">Quality</p>
+                        </div>
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-error">{submission.error_penalty}</p>
+                            <p className="text-xs text-text-muted">Penalty</p>
                         </div>
                     </div>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-900 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
-                    <button type="button" onClick={onClose} className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 sm:mt-0 sm:w-auto">
-                        Close
-                    </button>
-                </div>
-            </div>
+
+                    {/* AI Analysis Section */}
+                    <div className="border-t border-white/5 pt-4">
+                        {!analysis ? (
+                            <Button
+                                onClick={handleAnalyze}
+                                disabled={analyzing}
+                                className="w-full bg-gradient-to-r from-primary to-secondary"
+                            >
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                {analyzing ? "Analyzing..." : "Analyze with AI"}
+                            </Button>
+                        ) : (
+                            <div className="space-y-4">
+                                <h4 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-primary" /> AI Code Analysis
+                                </h4>
+
+                                {/* Strong Points */}
+                                <div className="bg-success/10 border border-success/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-success flex items-center gap-1 mb-2">
+                                        <ThumbsUp className="h-3 w-3" /> Strong Points
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.strong_points?.map((point, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {point}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+
+                                {/* Weak Points */}
+                                <div className="bg-error/10 border border-error/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-error flex items-center gap-1 mb-2">
+                                        <ThumbsDown className="h-3 w-3" /> Areas for Improvement
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.weak_points?.map((point, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {point}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+
+                                {/* Suggestions */}
+                                <div className="bg-secondary/10 border border-secondary/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-secondary flex items-center gap-1 mb-2">
+                                        <Lightbulb className="h-3 w-3" /> Suggestions
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.suggestions?.map((suggestion, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {suggestion}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 };
-// --- END MODAL COMPONENT ---
-
 
 export default function ViewResults() {
     const [assignments, setAssignments] = useState([]);
@@ -125,138 +121,141 @@ export default function ViewResults() {
     const [selectedSubmission, setSelectedSubmission] = useState(null);
     const [isReleasing, setIsReleasing] = useState(false);
 
-    // Find the full assignment object from the list
+    const [alpha, setAlpha] = useState(0.6);
+    const [beta, setBeta] = useState(0.4);
+    const [gamma, setGamma] = useState(10.0);
+
     const currentAssignment = assignments.find(a => a.id === parseInt(selectedAssignment, 10));
 
     useEffect(() => {
-        const fetchAssignments = async () => {
-            try {
-                // This fetches the list of assignments for the dropdown
-                const response = await getAssignments();
-                setAssignments(response.data);
-                if (response.data.length > 0) {
-                    setSelectedAssignment(response.data[0].id);
-                }
-            } catch (error) {
-                toast.error('Failed to fetch assignments.');
-            }
-        };
-        fetchAssignments();
+        getAssignments().then(res => {
+            setAssignments(res.data);
+            if (res.data.length > 0) setSelectedAssignment(res.data[0].id);
+        });
     }, []);
 
     useEffect(() => {
         if (selectedAssignment) {
-            const fetchResults = async () => {
-                setLoading(true);
-                setResults([]);
-                try {
-                    // This fetches the list of submissions for the selected assignment
-                    const response = await getResults(selectedAssignment);
-                    setResults(response.data);
-                } catch (error) {
-                     toast.error(error.response?.data?.detail || 'Failed to fetch results.');
-                } finally {
-                    setLoading(false);
-                }
-            };
-            fetchResults();
+            setLoading(true);
+            getResults(selectedAssignment)
+                .then(res => setResults(res.data))
+                .catch(() => toast.error("Failed to load results"))
+                .finally(() => setLoading(false));
         }
     }, [selectedAssignment]);
 
-    // --- NEW FUNCTION ---
     const handleReleaseResults = async () => {
         if (!currentAssignment) return;
-        
+        if (!window.confirm(`Release results with weights?\nTest: ${alpha}\nQuality: ${beta}\nPenalty: ${gamma}`)) return;
+
         setIsReleasing(true);
         try {
-            await releaseResults(currentAssignment.id);
-            toast.success("Results released successfully!");
-            // Update the local state to reflect the change
-            setAssignments(prev => prev.map(a => 
-                a.id === currentAssignment.id ? { ...a, results_released: true } : a
-            ));
+            await releaseResults(currentAssignment.id, alpha, beta, gamma);
+            toast.success("Results released!");
+            setAssignments(prev => prev.map(a => a.id === currentAssignment.id ? { ...a, results_released: true } : a));
+            const res = await getResults(currentAssignment.id);
+            setResults(res.data);
         } catch (error) {
-            toast.error("Failed to release results.");
+            toast.error("Failed to release.");
         } finally {
             setIsReleasing(false);
         }
     };
 
     return (
-        <>
-            <div className="bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">View Results</h2>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Review submissions and scores.</p>
-                    </div>
-                    <div className="w-full max-w-xs">
-                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Assignment</label>
-                        <select
-                            className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent"
-                            value={selectedAssignment}
-                            onChange={(e) => setSelectedAssignment(e.target.value)}
-                        >
-                            <option disabled value="">- Select -</option>
-                            {assignments.map(a => <option key={a.id} value={a.id}>{a.name} (ID: {a.id})</option>)}
-                        </select>
-                    </div>
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-text-primary">Result Manager</h1>
+                    <p className="text-text-muted mt-1">Review submissions and publish grades.</p>
                 </div>
-
-                {/* --- NEW BUTTON AND LOGIC --- */}
-                {currentAssignment && (
-                    <div className="flex justify-between items-center mb-4 border-t border-gray-700 pt-4">
-                        <span className='text-sm text-gray-400'>
-                            {results.length} / 72 Students Submitted
-                        </span>
-                        <button 
-                            onClick={handleReleaseResults}
-                            disabled={isReleasing || currentAssignment.results_released}
-                            className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
-                        >
-                            {isReleasing ? "Releasing..." : (currentAssignment.results_released ? "Results Released" : "Release Marks for This Assignment")}
-                        </button>
-                    </div>
-                )}
-                {/* --- END NEW --- */}
-
-                <div className="mt-6 flow-root">
-                    <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                        <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-                            <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
-                                <thead>
-                                    <tr>
-                                        <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 sm:pl-0">Roll #</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Submitted At</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Final Score</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Test Score</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Quality Score</th>
-                                        <th className="relative py-3.5 pl-3 pr-4 sm:pr-0"><span className="sr-only">Details</span></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {loading && <tr><td colSpan="6" className="text-center p-4 text-gray-500 dark:text-gray-400">Loading...</td></tr>}
-                                    {!loading && results.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-500 dark:text-gray-400">No submissions found.</td></tr>}
-                                    {results.map(res => (
-                                        <tr key={res.id}>
-                                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-gray-200 sm:pl-0">{res.roll}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(res.submitted_at).toLocaleString()}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold dark:text-gray-200">{res.final_score.toFixed(2)}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{res.raw_test_score.toFixed(2)}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{res.quality_score}</td>
-                                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
-                                                <button onClick={() => setSelectedSubmission(res)} className="text-accent hover:text-accent-hover">Details</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                <select
+                    className="bg-surface border border-white/10 px-4 py-2 rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    value={selectedAssignment}
+                    onChange={(e) => setSelectedAssignment(e.target.value)}
+                >
+                    <option disabled value="">Select Assignment</option>
+                    {assignments.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
             </div>
-            
+
+            {currentAssignment && !currentAssignment.results_released && (
+                <Card className="border-none shadow-soft bg-surface">
+                    <CardHeader className="border-b border-white/5">
+                        <div className="flex items-center gap-2">
+                            <BarChart3 className="h-5 w-5 text-primary" />
+                            <CardTitle className="text-text-primary">Grading Configuration</CardTitle>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Test Priority ({alpha})</label>
+                                <input type="range" min="0" max="1" step="0.1" value={alpha} onChange={(e) => { const val = parseFloat(e.target.value); setAlpha(val); setBeta(parseFloat((1 - val).toFixed(1))); }} className="w-full accent-primary" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Quality Priority ({beta})</label>
+                                <input type="range" min="0" max="1" step="0.1" value={beta} disabled className="w-full opacity-50 accent-secondary" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Error Penalty ({gamma})</label>
+                                <input type="range" min="0" max="50" step="5" value={gamma} onChange={(e) => setGamma(parseFloat(e.target.value))} className="w-full accent-error" />
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <Button onClick={handleReleaseResults} disabled={isReleasing} className="bg-success hover:bg-success/90">
+                                {isReleasing ? "Publishing..." : "Publish Results"}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {currentAssignment && currentAssignment.results_released && (
+                <div className="bg-success/10 text-success p-4 rounded-lg text-center font-bold border border-success/20">
+                    ✓ Results Published
+                </div>
+            )}
+
+            <Card className="border-none shadow-soft bg-surface overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="text-left text-xs uppercase tracking-wider text-text-muted bg-surface-dark/50">
+                                <th className="px-6 py-4 font-medium">Roll</th>
+                                <th className="px-6 py-4 font-medium">Test Score</th>
+                                <th className="px-6 py-4 font-medium">Quality</th>
+                                <th className="px-6 py-4 font-medium text-primary">Final</th>
+                                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                <tr><td colSpan="5" className="text-center py-8 text-text-muted">Loading...</td></tr>
+                            ) : results.length === 0 ? (
+                                <tr><td colSpan="5" className="text-center py-8 text-text-muted">No submissions yet</td></tr>
+                            ) : results.map(res => (
+                                <tr key={res.id} className="border-t border-white/5 hover:bg-surface-dark/30 transition-colors">
+                                    <td className="px-6 py-4 text-sm text-text-primary font-mono">{res.roll}</td>
+                                    <td className="px-6 py-4 text-sm text-text-muted">{res.raw_test_score.toFixed(1)}</td>
+                                    <td className="px-6 py-4 text-sm text-text-muted">{res.quality_score}</td>
+                                    <td className="px-6 py-4 text-sm font-bold text-primary">{res.final_score.toFixed(1)}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            onClick={() => setSelectedSubmission(res)}
+                                            className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                                        >
+                                            <Eye className="h-4 w-4" /> View
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+
             {selectedSubmission && <SubmissionModal submission={selectedSubmission} onClose={() => setSelectedSubmission(null)} />}
-        </>
+        </div>
     );
 }

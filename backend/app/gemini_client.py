@@ -171,7 +171,7 @@ async def classify_error(run_result: RunResult, code: str, testcase: TestCase) -
     prompt = f"""Classify the primary error from this Python code execution into ONE category: 'compile_error', 'runtime_error', 'timeout', 'wrong_output', 'logic_bug'. Respond ONLY with JSON: {{"error_type": "...", "explain": "Short explanation..."}}\n\nCode:\n```python\n{_short(code)}\n```\nExecution:\n{summary}"""
     try:
         # ROUTE TO FLASH MODEL
-        response_data = await _call_gemimni_api([prompt], model_name=MODEL_FLASH)
+        response_data = await _call_gemini_api([prompt], model_name=MODEL_FLASH)
         if isinstance(response_data, dict) and "error_type" in response_data:
             return {"error_type": str(response_data.get("error_type", "unknown")), "explain": str(response_data.get("explain", "AI classification failed."))}
         else:
@@ -192,6 +192,45 @@ async def code_quality(code: str) -> Dict[str, Any]:
             return {"score": 70, "comments": ["AI response format error."]}
     except Exception:
         return {"score": 70, "comments": ["AI call failed."]}
+
+async def analyze_code_feedback(code: str, problem_title: str = "") -> Dict[str, Any]:
+    """Analyzes student code and provides feedback on weak and strong points. Uses PRO model."""
+    if not GEMINI_API_KEY:
+        return {
+            "strong_points": ["Unable to analyze - API key not configured"],
+            "weak_points": ["Unable to analyze - API key not configured"],
+            "suggestions": ["Please configure GEMINI_API_KEY"]
+        }
+    
+    prompt = f"""Analyze this Python code submission for the problem: "{problem_title or 'Unknown'}".
+
+Provide constructive feedback for a teacher to share with the student.
+
+Respond ONLY with valid JSON in this exact format:
+{{
+    "strong_points": ["up to 3 specific things the student did well"],
+    "weak_points": ["up to 3 areas that need improvement"],
+    "suggestions": ["up to 3 actionable suggestions for improvement"]
+}}
+
+Code to analyze:
+```python
+{_short(code, 3000)}
+```"""
+    
+    try:
+        response_data = await _call_gemini_api([prompt], model_name=MODEL_PRO)
+        if isinstance(response_data, dict) and "strong_points" in response_data:
+            return {
+                "strong_points": list(response_data.get("strong_points", [])),
+                "weak_points": list(response_data.get("weak_points", [])),
+                "suggestions": list(response_data.get("suggestions", []))
+            }
+        else:
+            return {"strong_points": [], "weak_points": ["AI response format error"], "suggestions": []}
+    except Exception as e:
+        logger.error(f"Error in analyze_code_feedback: {e}")
+        return {"strong_points": [], "weak_points": ["AI call failed"], "suggestions": []}
 
 # ---- Canned Responses ----
 def _get_canned_questions(n: int) -> List[Dict[str, Any]]:

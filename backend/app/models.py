@@ -2,8 +2,6 @@ from typing import List, Optional, Dict, Any
 from sqlmodel import Field, SQLModel, Relationship, JSON, Column
 from datetime import date, datetime
 
-# --- User Models ---
-
 class Teacher(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
@@ -13,21 +11,19 @@ class Student(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     roll: int = Field(unique=True, index=True)
     username: str = Field(unique=True, index=True)
+    name: Optional[str] = Field(default=None) # Added name field
     dob: date 
     hashed_dob: str 
     student_assignments: List["StudentAssignment"] = Relationship(back_populates="student")
-    
-    # Relationship for 72-code system
     teacher_code: Optional["TeacherCode"] = Relationship(back_populates="student")
 
 class TeacherCode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_code: str = Field(unique=True)
-    is_used: bool = Field(default=False)
+    is_used: bool = Field(default=False)  # True when uses_remaining reaches 0
+    uses_remaining: int = Field(default=2)  # Code can be used 2 times
     student_id: Optional[int] = Field(default=None, foreign_key="student.id", unique=True)
     student: Optional["Student"] = Relationship(back_populates="teacher_code")
-
-# --- Content Models ---
 
 class Package(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -46,19 +42,15 @@ class TestCase(SQLModel, table=True):
     package_id: int = Field(foreign_key="package.id")
     package: "Package" = Relationship(back_populates="testcases")
 
-# --- Assignment & Submission Models ---
-
-# --- THIS MODEL IS UPDATED ---
 class Assignment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    # --- ADD THIS LINE ---
     results_released: bool = Field(default=False)
-
+    weight_test: float = Field(default=0.6)
+    weight_quality: float = Field(default=0.4)
+    weight_penalty: float = Field(default=10.0)
     student_assignments: List["StudentAssignment"] = Relationship(back_populates="assignment")
-# --- END UPDATE ---
 
 class StudentAssignment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -72,10 +64,7 @@ class StudentAssignment(SQLModel, table=True):
 
 class Submission(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # --- THIS IS UPDATED ---
-    # A student can only have one submission for a specific assignment
     student_assignment_id: int = Field(foreign_key="studentassignment.id", unique=True)
-    
     code: str
     submitted_at: datetime = Field(default_factory=datetime.utcnow)
     raw_test_score: float
@@ -87,7 +76,6 @@ class Submission(SQLModel, table=True):
     error_counts: Dict[str, Any] = Field(sa_column=Column(JSON))
     student_assignment: "StudentAssignment" = Relationship(back_populates="submission")
 
-# Rebuild all models
 Package.model_rebuild()
 Student.model_rebuild()
 TeacherCode.model_rebuild()
