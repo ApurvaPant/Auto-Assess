@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useChartTheme } from '../hooks/useChartTheme';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import {
     PlusCircle, Users, BookOpen, ClipboardList, TrendingUp,
@@ -56,6 +57,7 @@ const StatCard = ({ title, value, subtext, Icon, iconBg, iconColor }) => (
 
 // ─── Performance Chart (Avg vs Top) ──────────────────────────────────────────
 const PerformanceChart = ({ data }) => {
+    const ct = useChartTheme();
     const hasData = data && data.length > 0;
     return (
         <Card className="border-none bg-surface shadow-soft h-full">
@@ -84,8 +86,8 @@ const PerformanceChart = ({ data }) => {
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={data} barGap={4} barCategoryGap="38%">
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,128,128,0.07)" />
-                            <XAxis dataKey="name" tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} />
-                            <YAxis domain={[0, 100]} tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} width={26} />
+                            <XAxis dataKey="name" tick={{ fill: ct.tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
+                            <YAxis domain={[0, 100]} tick={{ fill: ct.tickFill, fontSize: 11 }} axisLine={false} tickLine={false} width={26} />
                             <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(99,102,241,0.04)' }} />
                             <Bar dataKey="avg" fill="rgba(99,102,241,0.45)" name="Average" radius={[4, 4, 0, 0]} />
                             <Bar dataKey="top" fill="rgba(99,102,241,0.95)" name="Top"     radius={[4, 4, 0, 0]} />
@@ -250,13 +252,22 @@ const ActivityFeed = ({ items }) => (
                         const scText = sc >= 80 ? 'text-success' : sc >= 60 ? 'text-lime-400' : sc >= 40 ? 'text-warning' : 'text-error';
                         return (
                             <div key={i} className="flex items-center gap-3 px-5 py-3 hover:bg-overlay/[0.02] transition-colors">
-                                {/* Avatar with colour ring based on score */}
-                                <div
-                                    className="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold text-surface flex-shrink-0"
-                                    style={{ background: sc !== null ? dot : 'rgba(255,255,255,0.1)' }}
-                                >
-                                    {item.user.charAt(0).toUpperCase()}
-                                </div>
+                                {/* Avatar */}
+                                {item.photo_url ? (
+                                    <img
+                                        src={item.photo_url}
+                                        alt={item.user}
+                                        className="h-7 w-7 rounded-full object-cover flex-shrink-0 border-2"
+                                        style={{ borderColor: sc !== null ? dot : 'rgba(255,255,255,0.15)' }}
+                                    />
+                                ) : (
+                                    <div
+                                        className="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold text-surface flex-shrink-0"
+                                        style={{ background: sc !== null ? dot : 'rgba(255,255,255,0.1)' }}
+                                    >
+                                        {item.user.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-xs font-medium text-text-primary truncate">{item.user}</p>
                                     <p className="text-[11px] text-text-muted truncate">{item.action}</p>

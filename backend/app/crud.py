@@ -25,6 +25,11 @@ def create_student(db: Session, email: str, name: str, hashed_password: str) -> 
     db.add(student); db.commit(); db.refresh(student)
     return student
 
+def create_google_student(db: Session, email: str, name: str, photo_url: Optional[str] = None) -> models.Student:
+    student = models.Student(email=email, name=name, hashed_password="google_oauth", photo_url=photo_url)
+    db.add(student); db.commit(); db.refresh(student)
+    return student
+
 # ─── Classroom ────────────────────────────────────────────────────────────────
 def _generate_classroom_code(db: Session) -> str:
     for _ in range(100):
@@ -424,6 +429,7 @@ def get_dashboard_stats(db: Session, classroom_id: Optional[int] = None) -> Dict
         recent_activity.append({
             "user": student_name, "action": assignment_name, "time": time_str,
             "score": round(sub.final_score) if sub.student_assignment.assignment.results_released else None,
+            "photo_url": sub.student_assignment.student.photo_url,
         })
 
     # Chart data
@@ -623,4 +629,155 @@ def get_student_portfolio(db: Session, classroom_id: int, student_id: int) -> Op
             "error_frequency": error_frequency,
         },
         "assignments": assignments_data,
+    }
+
+
+# ─── Class Analysis (K-Means) ─────────────────────────────────────────────────
+def get_class_analysis(db: Session, classroom_id: int) -> Dict[str, Any]:
+    from sqlmodel import select as sqlselect
+    import numpy as np
+
+    memberships = db.exec(
+        sqlselect(models.ClassroomStudent).where(models.ClassroomStudent.classroom_id == classroom_id)
+    ).all()
+    if not memberships:
+        return {"students": [], "clusters": [], "summary": {"total_students": 0, "avg_score": 0, "avg_quality": 0, "avg_completion": 0}}
+
+    student_data = []
+    for m in memberships:
+        student = db.get(models.Student, m.student_id)
+        if not student:
+            continue
+
+        sas = db.exec(
+            sqlselect(models.StudentAssignment)
+            .join(models.Assignment)
+            .where(models.StudentAssignment.student_id == student.id)
+            .where(models.Assignment.classroom_id == classroom_id)
+        ).all()
+
+        total = len(sas)
+        submitted = [sa for sa in sas if sa.submission]
+        n_sub = len(submitted)
+
+        avg_score      = round(sum(sa.submission.final_score     for sa in submitted) / n_sub, 1) if n_sub else 0.0
+        avg_quality    = round(sum(sa.submission.quality_score   for sa in submitted) / n_sub, 1) if n_sub else 0.0
+        avg_test_score = round(sum(sa.submission.raw_test_score  for sa in submitted) / n_sub, 1) if n_sub else 0.0
+        avg_penalty    = round(sum(sa.submission.error_penalty   for sa in submitted) / n_sub, 1) if n_sub else 0.0
+        completion     = round(n_sub / total * 100, 1) if total else 0.0
+
+        student_data.append({
+            "id": student.id,
+            "name": student.name or student.email,
+            "email": student.email,
+            "photo_url": student.photo_url,
+            "avg_score": avg_score,
+            "avg_quality": avg_quality,
+            "avg_test_score": avg_test_score,
+            "avg_penalty": avg_penalty,
+            "completion_rate": completion,
+            "submissions": n_sub,
+            "total_assignments": total,
+            "cluster": 0,
+            "cluster_label": "Unclassified",
+        })
+
+    CLUSTER_META = [
+        {"label": "High Performers", "color": "#22c55e"},
+        {"label": "Average",         "color": "#f59e0b"},
+        {"label": "Needs Support",   "color": "#ef4444"},
+    ]
+
+    n = len(student_data)
+    k = min(3, n)
+
+    if n >= 2:
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.preprocessing import StandardScaler
+
+            features = np.array([[s["avg_score"], s["avg_quality"], s["completion_rate"]] for s in student_data], dtype=float)
+            scaler = StandardScaler()
+            features_scaled = scaler.fit_transform(features)
+
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            raw_labels = kmeans.fit_predict(features_scaled)
+
+            # Rank clusters: highest avg_score centroid → index 0 (High Performers)
+            centroid_scores = scaler.inverse_transform(kmeans.cluster_centers_)[:, 0]
+            rank_order = np.argsort(centroid_scores)[::-1]
+            label_map = {int(orig): rank for rank, orig in enumerate(rank_order)}
+
+            for i, s in enumerate(student_data):
+                rank = label_map[int(raw_labels[i])]
+                s["cluster"] = rank
+                s["cluster_label"] = CLUSTER_META[rank]["label"]
+        except Exception:
+            for s in student_data:
+                s["cluster"] = 0
+                s["cluster_label"] = CLUSTER_META[0]["label"]
+            k = 1
+    else:
+        for s in student_data:
+            s["cluster"] = 0
+            s["cluster_label"] = CLUSTER_META[0]["label"]
+        k = 1
+
+    clusters = []
+    for rank in range(k):
+        members = [s for s in student_data if s["cluster"] == rank]
+        clusters.append({
+            "id": rank,
+            "label": CLUSTER_META[rank]["label"],
+            "color": CLUSTER_META[rank]["color"],
+            "count": len(members),
+            "avg_score":      round(sum(s["avg_score"]        for s in members) / len(members), 1) if members else 0.0,
+            "avg_quality":    round(sum(s["avg_quality"]      for s in members) / len(members), 1) if members else 0.0,
+            "avg_completion": round(sum(s["completion_rate"]  for s in members) / len(members), 1) if members else 0.0,
+            "avg_test_score": round(sum(s["avg_test_score"]   for s in members) / len(members), 1) if members else 0.0,
+            "avg_penalty":    round(sum(s["avg_penalty"]      for s in members) / len(members), 1) if members else 0.0,
+        })
+
+    submitted_any = [s for s in student_data if s["submissions"] > 0]
+    summary = {
+        "total_students": n,
+        "avg_score":       round(sum(s["avg_score"]       for s in submitted_any) / len(submitted_any), 1) if submitted_any else 0.0,
+        "avg_quality":     round(sum(s["avg_quality"]     for s in submitted_any) / len(submitted_any), 1) if submitted_any else 0.0,
+        "avg_completion":  round(sum(s["completion_rate"] for s in student_data)  / n, 1) if n else 0.0,
+        "avg_test_score":  round(sum(s["avg_test_score"]  for s in submitted_any) / len(submitted_any), 1) if submitted_any else 0.0,
+        "avg_penalty":     round(sum(s["avg_penalty"]     for s in submitted_any) / len(submitted_any), 1) if submitted_any else 0.0,
+    }
+
+    # ── Per-assignment class trends ───────────────────────────────────────────
+    from sqlmodel import select as _sel
+    assignments_list = db.exec(
+        _sel(models.Assignment)
+        .where(models.Assignment.classroom_id == classroom_id)
+        .order_by(models.Assignment.created_at)
+    ).all()
+
+    assignment_trends = []
+    for asn in assignments_list:
+        asn_sas = db.exec(
+            _sel(models.StudentAssignment)
+            .where(models.StudentAssignment.assignment_id == asn.id)
+        ).all()
+        asn_submitted = [sa for sa in asn_sas if sa.submission and sa.submission.final_score is not None]
+        if asn_submitted:
+            assignment_trends.append({
+                "name":            asn.name[:18],
+                "avg_score":       round(sum(sa.submission.final_score    for sa in asn_submitted) / len(asn_submitted), 1),
+                "avg_quality":     round(sum(sa.submission.quality_score  for sa in asn_submitted) / len(asn_submitted), 1),
+                "avg_test":        round(sum(sa.submission.raw_test_score for sa in asn_submitted) / len(asn_submitted), 1),
+                "avg_penalty":     round(sum(sa.submission.error_penalty  for sa in asn_submitted) / len(asn_submitted), 1),
+                "submission_rate": round(len(asn_submitted) / len(asn_sas) * 100, 1) if asn_sas else 0.0,
+                "submitted":       len(asn_submitted),
+                "total":           len(asn_sas),
+            })
+
+    return {
+        "students":          student_data,
+        "clusters":          clusters,
+        "summary":           summary,
+        "assignment_trends": assignment_trends,
     }

@@ -248,7 +248,6 @@ const PlagiarismPanel = ({ assignmentId }) => {
                     <div className="flex items-center gap-2">
                         <ShieldAlert className="h-5 w-5 text-warning" />
                         <CardTitle className="text-text-primary">Plagiarism Check</CardTitle>
-                        <span className="text-xs text-text-muted ml-1">— AI powered, teacher only</span>
                     </div>
                     <Button
                         size="sm"

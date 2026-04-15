@@ -8,8 +8,7 @@ import { Badge } from '../components/ui/Badge';
 import {
     ArrowLeft, CheckCircle, XCircle, Sparkles, ThumbsUp,
     Lightbulb, Target, AlertCircle, BookOpen, Code2,
-    TrendingUp, Info, LogOut, Zap, Star, Shield, ChevronDown,
-    Eye, EyeOff, Terminal
+    TrendingUp, Info, LogOut, Zap, Star, Shield, ChevronDown, Terminal
 } from 'lucide-react';
 
 /* ─── Score ring ─────────────────────────────────────────────────────────── */
@@ -20,7 +19,7 @@ const ScoreRing = ({ score, size = 120 }) => {
     const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
     return (
         <svg width={size} height={size} viewBox="0 0 100 100" className="-rotate-90">
-            <circle cx="50" cy="50" r={radius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+            <circle cx="50" cy="50" r={radius} fill="none" stroke="rgba(128,128,128,0.12)" strokeWidth="8" />
             <circle cx="50" cy="50" r={radius} fill="none" stroke={color} strokeWidth="8"
                 strokeDasharray={circumference} strokeDashoffset={filled} strokeLinecap="round"
                 style={{ transition: 'stroke-dashoffset 1.2s ease' }} />
@@ -31,9 +30,7 @@ const ScoreRing = ({ score, size = 120 }) => {
 /* ─── Expandable test case row ───────────────────────────────────────────── */
 const TestCaseRow = ({ index, result }) => {
     const [open, setOpen] = useState(false);
-    const isVisible = result.type !== 'hidden';
-    const hasDetails = result.stdout || result.stderr || result.explanation ||
-        (isVisible && (result.input != null || result.expected != null));
+    const hasDetails = true;
 
     return (
         <div className={`rounded-xl border overflow-hidden transition-colors ${result.passed ? 'border-success/15 bg-success/[0.02]' : 'border-error/15 bg-error/[0.02]'}`}>
@@ -48,12 +45,6 @@ const TestCaseRow = ({ index, result }) => {
                     </div>
                     <div>
                         <p className="text-xs font-semibold text-text-primary leading-none">Test {index + 1}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                            {isVisible
-                                ? <span className="text-[10px] text-text-muted flex items-center gap-0.5"><Eye className="h-2.5 w-2.5" /> Visible</span>
-                                : <span className="text-[10px] text-text-muted flex items-center gap-0.5"><EyeOff className="h-2.5 w-2.5" /> Hidden</span>
-                            }
-                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -68,8 +59,8 @@ const TestCaseRow = ({ index, result }) => {
 
             {open && hasDetails && (
                 <div className="border-t border-overlay/[0.06] px-3.5 pb-4 pt-3 space-y-3">
-                    {/* Input — visible tests only */}
-                    {isVisible && result.input != null && (
+                    {/* Input */}
+                    {result.input != null && (
                         <div>
                             <p className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-1.5">Input</p>
                             <pre className="bg-overlay/[0.04] border border-overlay/[0.06] rounded-lg px-3 py-2.5 text-xs font-mono text-text-secondary whitespace-pre-wrap break-all leading-relaxed">
@@ -78,8 +69,8 @@ const TestCaseRow = ({ index, result }) => {
                         </div>
                     )}
 
-                    {/* Expected — visible tests only */}
-                    {isVisible && result.expected != null && (
+                    {/* Expected */}
+                    {result.expected != null && (
                         <div>
                             <p className="text-[10px] font-semibold text-success/80 uppercase tracking-widest mb-1.5">Expected</p>
                             <pre className="bg-success/[0.04] border border-success/10 rounded-lg px-3 py-2.5 text-xs font-mono text-success/90 whitespace-pre-wrap break-all leading-relaxed">
@@ -98,7 +89,11 @@ const TestCaseRow = ({ index, result }) => {
                                 ? 'bg-success/[0.04] border-success/10 text-success/90'
                                 : 'bg-error/[0.04] border-error/10 text-error/90'
                         }`}>
-                            {result.stdout || '(no output)'}
+                            {result.stdout
+                                ? result.stdout
+                                : result.passed
+                                    ? '(empty output — matched expected)'
+                                    : '(no output)'}
                         </pre>
                     </div>
 
@@ -186,8 +181,6 @@ export default function StudentResultPage() {
     const passRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
     const score = submission.final_score ?? 0;
     const scoreColor = score >= 80 ? 'text-success' : score >= 50 ? 'text-warning' : 'text-error';
-    const scoreBorderL = score >= 80 ? 'border-l-success' : score >= 50 ? 'border-l-warning' : 'border-l-error';
-
     const istDate = new Date(submission.submitted_at).toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: true,
@@ -225,7 +218,7 @@ export default function StudentResultPage() {
             <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7 space-y-6">
 
                 {/* ── Hero ─────────────────────────────────────────────────── */}
-                <div className={`rounded-2xl border border-overlay/[0.08] border-l-4 ${scoreBorderL} bg-surface p-5 sm:p-7 flex flex-col sm:flex-row items-center gap-7`}>
+                <div className="rounded-2xl border border-overlay/[0.08] bg-surface p-5 sm:p-7 flex flex-col sm:flex-row items-center gap-7">
                     <div className="relative shrink-0">
                         <ScoreRing score={score} size={120} />
                         <div className="absolute inset-0 flex flex-col items-center justify-center">

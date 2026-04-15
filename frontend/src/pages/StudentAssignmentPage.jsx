@@ -89,7 +89,7 @@ export default function StudentAssignmentPage() {
     const { assignment_id } = useParams();
     const navigate = useNavigate();
     const [assignmentData, setAssignmentData] = useState(null);
-    const [code, setCode] = useState('# Enter your Python code here\n# Use sys.stdin.readline() to read input');
+    const [code, setCode] = useState('import sys\n\n# Read input\ndata = sys.stdin.readline().strip()\n\n# Write your solution here\n');
 
     const [hasSubmitted, setHasSubmitted] = useState(false);
     const [resultsReleased, setResultsReleased] = useState(false);

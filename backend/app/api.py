@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, UploadFile, File, Form, Body, Query
 from typing import List, Optional
 from sqlmodel import Session, select
-from app import crud, schemas, models, auth, assignment_logic, gemini_client, constants
+from app import crud, schemas, models, auth, assignment_logic, gemini_client, constants, email_service, runner
 from app.database import get_session
 import asyncio
 from datetime import datetime
@@ -9,6 +9,46 @@ from PIL import Image
 import io
 
 api_router = APIRouter()
+
+# ── Output comparison helper ──────────────────────────────────────────────────
+def _outputs_match(actual: str, expected: str) -> bool:
+    """
+    Compare student output to expected output.
+
+    Handles the most common format mismatches that occur with function-based
+    submissions:
+      • Trailing / leading whitespace (always stripped)
+      • Numeric formatting: '2.0' vs '2', '1.000' vs '1', '-0.0' vs '0'
+
+    Does NOT normalise string case or reorder lines — those are real differences.
+    """
+    a, e = actual.strip(), expected.strip()
+    if a == e:
+        return True
+
+    a_lines, e_lines = a.splitlines(), e.splitlines()
+    if len(a_lines) != len(e_lines):
+        return False
+
+    for al, el in zip(a_lines, e_lines):
+        al, el = al.strip(), el.strip()
+        if al == el:
+            continue
+        # Try numeric comparison (handles 2.0==2, 1.5==1.50, etc.)
+        try:
+            if float(al) == float(el):
+                continue
+        except (ValueError, TypeError):
+            pass
+        return False
+
+    return True
+
+# ─── Public Config ────────────────────────────────────────────────────────────
+@api_router.get("/config", tags=["Public"])
+def get_config():
+    """Returns public client-side config (e.g. Google Client ID)."""
+    return {"google_client_id": constants.GOOGLE_CLIENT_ID}
 
 # ─── Teacher Auth ─────────────────────────────────────────────────────────────
 @api_router.post("/teacher/login", response_model=schemas.Token, tags=["Teacher"])
@@ -94,13 +134,19 @@ def delete_all_packages(classroom_id: Optional[int] = Query(None), db: Session =
 
 # ─── Assignments ──────────────────────────────────────────────────────────────
 @api_router.post("/teacher/create_assignment", response_model=models.Assignment, tags=["Teacher"])
-def create_assignment(data: schemas.AssignmentCreate, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
+def create_assignment(data: schemas.AssignmentCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
     packages = crud.get_packages_by_ids(db, data.package_ids)
     students = crud.get_classroom_students(db, data.classroom_id)
     if not students: raise HTTPException(status_code=400, detail="No students in this classroom.")
     try: sa_data = assignment_logic.assign_packages_to_students(students=students, packages=packages)
     except ValueError as e: raise HTTPException(status_code=400, detail=str(e))
-    return crud.create_assignment_with_mappings(db, name=data.assignment_name, student_assignments_data=sa_data, classroom_id=data.classroom_id, deadline=data.deadline)
+    assignment = crud.create_assignment_with_mappings(db, name=data.assignment_name, student_assignments_data=sa_data, classroom_id=data.classroom_id, deadline=data.deadline)
+    classroom = crud.get_classroom_by_id(db, data.classroom_id)
+    classroom_name = classroom.name if classroom else ""
+    deadline_str = data.deadline.strftime("%d %b %Y, %I:%M %p") if data.deadline else ""
+    students_data = [{"email": s.email, "name": s.name} for s in students]
+    background_tasks.add_task(email_service.notify_assignment_created, students_data, data.assignment_name, classroom_name, deadline_str)
+    return assignment
 
 @api_router.get("/teacher/assignments", response_model=List[models.Assignment], tags=["Teacher"])
 def list_assignments(classroom_id: Optional[int] = Query(None), db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
@@ -134,9 +180,17 @@ def get_assignment_results(assignment_id: int, db: Session = Depends(get_session
     return result
 
 @api_router.post("/teacher/assignments/{assignment_id}/release", status_code=status.HTTP_204_NO_CONTENT, tags=["Teacher"])
-def release_results(assignment_id: int, request: schemas.ReleaseResultsRequest, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
-    if not crud.release_results_for_assignment(db, assignment_id, alpha=request.alpha, beta=request.beta, gamma=request.gamma):
+def release_results(assignment_id: int, request: schemas.ReleaseResultsRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
+    assignment = crud.release_results_for_assignment(db, assignment_id, alpha=request.alpha, beta=request.beta, gamma=request.gamma)
+    if not assignment:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    submissions = crud.get_submissions_for_assignment(db, assignment_id)
+    submissions_data = [
+        {"email": sub.student_assignment.student.email, "name": sub.student_assignment.student.name, "final_score": sub.final_score}
+        for sub in submissions
+        if sub.student_assignment and sub.student_assignment.student
+    ]
+    background_tasks.add_task(email_service.notify_results_released, submissions_data, assignment.name)
 
 @api_router.get("/teacher/assignments/{assignment_id}/plagiarism", tags=["Teacher"])
 async def check_plagiarism(assignment_id: int, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
@@ -200,6 +254,26 @@ def login_student(data: schemas.StudentLogin, db: Session = Depends(get_session)
     if not student: raise HTTPException(status_code=401, detail="Incorrect email or password")
     return {"access_token": auth.create_access_token(data={"sub": str(student.id)}), "token_type": "bearer"}
 
+@api_router.post("/student/google-auth", response_model=schemas.Token, tags=["Student"])
+def google_auth_student(body: schemas.GoogleAuthRequest, db: Session = Depends(get_session)):
+    if not constants.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google Sign-In is not configured on this server.")
+    try:
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as grequests
+        id_info = id_token.verify_oauth2_token(body.credential, grequests.Request(), constants.GOOGLE_CLIENT_ID)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google token.")
+    email = id_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email.")
+    student = crud.get_student_by_email(db, email=email)
+    if not student:
+        name = id_info.get("name") or email.split("@")[0]
+        picture = id_info.get("picture")
+        student = crud.create_google_student(db, email=email, name=name, photo_url=picture)
+    return {"access_token": auth.create_access_token(data={"sub": str(student.id)}), "token_type": "bearer"}
+
 # ─── Student Classrooms ──────────────────────────────────────────────────────
 @api_router.post("/student/join", tags=["Student"])
 def join_classroom(data: schemas.JoinClassroomRequest, db: Session = Depends(get_session), student: models.Student = Depends(auth.get_current_student)):
@@ -242,21 +316,17 @@ async def run_code(run_data: schemas.RunCodeRequest, db: Session = Depends(get_s
     sample_tcs = [tc for tc in sa.package.testcases if tc.type == 'sample']
     if not sample_tcs:
         return schemas.RunCodeResponse(overall_output="No sample test cases found.", results=[])
-    eval_result = await gemini_client.evaluate_code_with_llm(
-        code=run_data.code, problem_title=sa.package.title, problem_prompt=sa.package.prompt,
-        testcases=[{"id": tc.id, "input": tc.input, "type": tc.type} for tc in sample_tcs]
-    )
-    results_by_id = {r["testcase_id"]: r for r in eval_result.get("results", [])}
+    loop = asyncio.get_running_loop()
+    run_results = await asyncio.gather(*[
+        loop.run_in_executor(None, runner.run_python_code, run_data.code, tc.input or "")
+        for tc in sample_tcs
+    ])
     results, all_stdout = [], []
-    for tc in sample_tcs:
-        r = results_by_id.get(tc.id, {})
-        if eval_result.get("has_syntax_error"):
-            stdout, stderr, timed_out = "", eval_result.get("syntax_error_msg", "Syntax error"), False
-        else:
-            stdout, stderr, timed_out = str(r.get("stdout", "")), str(r.get("stderr", "")), bool(r.get("timed_out", False))
-        passed = not timed_out and not stderr and stdout.strip() == tc.expected.strip()
+    for tc, res in zip(sample_tcs, run_results):
+        stdout, stderr, timed_out = res.stdout, res.stderr, res.timed_out
+        passed = not timed_out and not stderr and _outputs_match(stdout, tc.expected)
         if stdout: all_stdout.append(stdout)
-        results.append(schemas.RunCodeResult(stdout=stdout, stderr=stderr, runtime=0.0, timed_out=timed_out, passed=passed, testcase_type=tc.type, explanation=str(r.get("explanation", ""))))
+        results.append(schemas.RunCodeResult(stdout=stdout, stderr=stderr, runtime=res.runtime, timed_out=timed_out, passed=passed, testcase_type=tc.type, explanation=""))
     return schemas.RunCodeResponse(overall_output="\n".join(all_stdout), results=results)
 
 @api_router.post("/submit", response_model=schemas.SubmissionResult, tags=["Student"])
@@ -268,31 +338,28 @@ async def submit_solution(submission_data: schemas.SubmissionCreate, db: Session
     if sa.assignment.deadline and datetime.utcnow() > sa.assignment.deadline:
         raise HTTPException(status_code=403, detail="Submission deadline has passed.")
     package = sa.package
-    eval_result, q_res = await asyncio.gather(
-        gemini_client.evaluate_code_with_llm(
-            code=submission_data.code, problem_title=package.title, problem_prompt=package.prompt,
-            testcases=[{"id": tc.id, "input": tc.input, "type": tc.type} for tc in package.testcases]
-        ),
+    loop = asyncio.get_running_loop()
+    run_results, q_res = await asyncio.gather(
+        asyncio.gather(*[
+            loop.run_in_executor(None, runner.run_python_code, submission_data.code, tc.input or "")
+            for tc in package.testcases
+        ]),
         gemini_client.code_quality(submission_data.code)
     )
-    results_by_id = {r["testcase_id"]: r for r in eval_result.get("results", [])}
     total_pts, passed_pts = sum(tc.points for tc in package.testcases), 0
     test_results = []
-    has_error = eval_result.get("has_syntax_error", False)
-    any_stderr, any_timeout = False, False
-    for tc in package.testcases:
-        r = results_by_id.get(tc.id, {})
-        if has_error:
-            stdout, stderr, timed_out = "", eval_result.get("syntax_error_msg", "Syntax error"), False
-        else:
-            stdout, stderr, timed_out = str(r.get("stdout", "")), str(r.get("stderr", "")), bool(r.get("timed_out", False))
-        passed = not timed_out and not stderr and stdout.strip() == tc.expected.strip()
+    any_stderr, any_timeout, has_syntax_error = False, False, False
+    for tc, res in zip(package.testcases, run_results):
+        stdout, stderr, timed_out = res.stdout, res.stderr, res.timed_out
+        if "SyntaxError" in stderr or "IndentationError" in stderr:
+            has_syntax_error = True
+        passed = not timed_out and not stderr and _outputs_match(stdout, tc.expected)
         if passed: passed_pts += tc.points
         if stderr: any_stderr = True
         if timed_out: any_timeout = True
-        test_results.append({"testcase_id": tc.id, "passed": passed, "stdout": stdout, "stderr": stderr, "type": tc.type, "explanation": str(r.get("explanation", "")), "input": tc.input if tc.type != "hidden" else None, "expected": tc.expected if tc.type != "hidden" else None})
+        test_results.append({"testcase_id": tc.id, "passed": passed, "stdout": stdout, "stderr": stderr, "type": tc.type, "explanation": "", "input": tc.input if tc.type != "hidden" else None, "expected": tc.expected if tc.type != "hidden" else None})
     raw_test_score = (passed_pts / total_pts) * 100 if total_pts > 0 else 0
-    if has_error: error_type = "compile_error"
+    if has_syntax_error: error_type = "compile_error"
     elif any_timeout: error_type = "timeout"
     elif any_stderr: error_type = "runtime_error"
     elif raw_test_score < 100: error_type = "wrong_output"
@@ -314,7 +381,18 @@ def get_student_result(assignment_id: int, db: Session = Depends(get_session), s
     if not sa: raise HTTPException(status_code=404, detail="Assignment not found")
     if not sa.assignment.results_released: raise HTTPException(status_code=403, detail="Results not released yet")
     if not sa.submission: raise HTTPException(status_code=404, detail="No submission found")
-    return schemas.SubmissionResult(**sa.submission.model_dump(), student_id=student.id)
+    submission_dict = sa.submission.model_dump()
+    # Results are released — reveal hidden test case input/expected from the DB
+    if sa.package and sa.package.testcases:
+        tc_map = {tc.id: tc for tc in sa.package.testcases}
+        enriched = []
+        for tr in (submission_dict.get("test_results") or []):
+            tc = tc_map.get(tr.get("testcase_id"))
+            if tc and tr.get("type") == "hidden":
+                tr = {**tr, "input": tc.input, "expected": tc.expected}
+            enriched.append(tr)
+        submission_dict["test_results"] = enriched
+    return schemas.SubmissionResult(**submission_dict, student_id=student.id)
 
 @api_router.get("/student/analyze/{assignment_id}", tags=["Student"])
 async def student_analyze(assignment_id: int, db: Session = Depends(get_session), student: models.Student = Depends(auth.get_current_student)):
@@ -323,6 +401,11 @@ async def student_analyze(assignment_id: int, db: Session = Depends(get_session)
     if not sa.assignment.results_released: raise HTTPException(status_code=403, detail="Available after results are released")
     if not sa.submission: raise HTTPException(status_code=404, detail="No submission found")
     return await gemini_client.analyze_code_feedback(sa.submission.code, sa.package.title if sa.package else "")
+
+# ─── Class Analysis ───────────────────────────────────────────────────────────
+@api_router.get("/teacher/classrooms/{classroom_id}/class-analysis", tags=["Teacher"])
+def get_class_analysis(classroom_id: int, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
+    return crud.get_class_analysis(db, classroom_id=classroom_id)
 
 # ─── Student Profile ──────────────────────────────────────────────────────────
 @api_router.get("/student/profile", tags=["Student"])
@@ -396,8 +479,14 @@ def get_classroom_doubts(classroom_id: int, db: Session = Depends(get_session), 
     return result
 
 @api_router.post("/teacher/doubts/{doubt_id}/reply", tags=["Doubts"])
-def reply_to_doubt(doubt_id: int, data: schemas.DoubtReply, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
+def reply_to_doubt(doubt_id: int, data: schemas.DoubtReply, background_tasks: BackgroundTasks, db: Session = Depends(get_session), teacher: models.Teacher = Depends(auth.get_current_teacher)):
     doubt = crud.reply_to_doubt(db, doubt_id, data.reply)
     if not doubt:
         raise HTTPException(status_code=404, detail="Doubt not found")
+    student = doubt.student
+    assignment_name = doubt.assignment.name if doubt.assignment_id and doubt.assignment else ""
+    background_tasks.add_task(
+        email_service.notify_doubt_replied,
+        student.email, student.name, doubt.question, data.reply, assignment_name,
+    )
     return {"message": "Reply sent"}
