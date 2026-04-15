@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { loginTeacher } from '../api';
+import { loginTeacher } from '../api/client';
 import toast from 'react-hot-toast';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Lock, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export default function TeacherLogin() {
     const [username, setUsername] = useState('teacher');
@@ -17,8 +20,8 @@ export default function TeacherLogin() {
         try {
             const response = await loginTeacher(username, password);
             login(response.data.access_token);
-            toast.success('Login successful!');
-            navigate('/teacher/generate'); // Go to Generate page after login
+            toast.success('Welcome back, Professor.');
+            navigate('/teacher/generate');
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Login failed.');
         } finally {
@@ -27,27 +30,60 @@ export default function TeacherLogin() {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen">
-             <div className="w-full max-w-sm p-8 space-y-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-                <div>
-                    <h2 className="text-2xl font-bold text-center text-gray-900 dark:text-gray-100">Teacher Login</h2>
-                    <p className="mt-2 text-sm text-center text-gray-600 dark:text-gray-400">Access the dashboard.</p>
+        <div className="min-h-screen bg-background flex flex-col">
+            {/* Top bar */}
+            <div className="px-6 py-5">
+                <Link to="/">
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-text-muted">
+                        <ArrowLeft className="h-4 w-4" /> Back
+                    </Button>
+                </Link>
+            </div>
+
+            {/* Centered form */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 pb-24">
+                <div className="w-full max-w-sm space-y-10">
+
+                    {/* Icon + heading */}
+                    <div className="text-center space-y-4">
+                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-overlay/[0.07] border border-overlay/10 mx-auto">
+                            <Lock className="h-8 w-8 text-text-primary" />
+                        </div>
+                        <div>
+                            <h1 className="text-4xl font-black tracking-tight text-text-primary">Teacher Access</h1>
+                            <p className="text-sm text-text-muted mt-2 leading-relaxed">Secure login for faculty members</p>
+                        </div>
+                    </div>
+
+                    {/* Form */}
+                    <form className="space-y-4" onSubmit={handleSubmit}>
+                        <Input
+                            label="Username"
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                            placeholder="Enter your ID"
+                        />
+                        <Input
+                            label="Password"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            placeholder="••••••••"
+                        />
+                        <div className="pt-3">
+                            <Button type="submit" size="lg" className="w-full gap-2" isLoading={loading}>
+                                Sign In <ArrowRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </form>
+
+                    <p className="text-center text-xs text-text-muted">
+                        Restricted to authorized personnel only.
+                    </p>
                 </div>
-                <form className="space-y-6" onSubmit={handleSubmit}>
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
-                        <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-                    </div>
-                    <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
-                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent" />
-                    </div>
-                    <div>
-                        <button type="submit" disabled={loading} className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent disabled:opacity-50">
-                            {loading ? 'Signing in...' : 'Sign in'}
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
     );

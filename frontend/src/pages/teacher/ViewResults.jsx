@@ -1,123 +1,328 @@
 import { useEffect, useState } from 'react';
-import { getAssignments, getResults, releaseResults } from '../../api';
+import { getAssignments, getResults, releaseResults, getCodeAnalysis, getPlagiarismReport, getAIDetection } from '../../api/client';
 import toast from 'react-hot-toast';
-import { Bar } from 'react-chartjs-2';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Select';
+import { X, Eye, BarChart3, Sparkles, ThumbsUp, ThumbsDown, Lightbulb, ShieldAlert, ShieldCheck, AlertTriangle, Loader2, BotMessageSquare } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+const VERDICT_STYLE = {
+    likely_human: { color: 'text-success', bar: 'bg-success', label: 'Likely Human' },
+    possibly_ai:  { color: 'text-warning', bar: 'bg-warning', label: 'Possibly AI-Generated' },
+    likely_ai:    { color: 'text-error',   bar: 'bg-error',   label: 'Likely AI-Generated' },
+    unknown:      { color: 'text-text-muted', bar: 'bg-overlay/20', label: 'Unknown' },
+};
 
-// --- MODAL COMPONENT ---
-const SubmissionModal = ({ submission, onClose }) => {
-    if (!submission) return null;
+const SubmissionModal = ({ submission, onClose, analysisCache, onCacheUpdate, aiDetectCache, onAIDetectUpdate }) => {
+    const cached = submission ? analysisCache[submission.id] : null;
+    const [analysis, setAnalysis] = useState(cached ?? null);
+    const [analyzing, setAnalyzing] = useState(false);
 
-    const chartData = {
-        labels: ['Scores'],
-        datasets: [
-            {
-                label: 'Test Score',
-                data: [submission.raw_test_score],
-                backgroundColor: 'rgba(75, 192, 192, 0.6)',
-            },
-            {
-                label: 'Quality Score',
-                data: [submission.quality_score],
-                backgroundColor: 'rgba(54, 162, 235, 0.6)',
-            },
-            {
-                label: 'Error Penalty',
-                data: [-submission.error_penalty],
-                backgroundColor: 'rgba(255, 99, 132, 0.6)',
-            },
-        ],
-    };
+    const cachedAI = submission ? aiDetectCache[submission.id] : null;
+    const [aiDetect, setAiDetect] = useState(cachedAI ?? null);
+    const [detectingAI, setDetectingAI] = useState(false);
 
-    const chartOptions = {
-        responsive: true,
-        plugins: {
-            legend: { position: 'top', labels: { color: '#ccc' } },
-            title: { display: true, text: 'Score Composition', color: '#ccc' },
-        },
-        scales: { 
-            y: { 
-                beginAtZero: true, 
-                ticks: { color: '#ccc' },
-                grid: { color: 'rgba(255, 255, 255, 0.1)'} 
-            },
-            x: {
-                ticks: { color: '#ccc' },
-                grid: { color: 'rgba(255, 255, 255, 0.1)'}
-            }
+    const runAnalysis = async () => {
+        if (!submission?.id) return;
+        setAnalyzing(true);
+        try {
+            const res = await getCodeAnalysis(submission.id);
+            setAnalysis(res.data);
+            onCacheUpdate(submission.id, res.data);
+        } catch (error) {
+            toast.error("Failed to analyze code");
+        } finally {
+            setAnalyzing(false);
         }
     };
 
-    const passedTests = submission.test_results.filter(r => r.passed).length;
-    const totalTests = submission.test_results.length;
+    const runAIDetect = async () => {
+        if (!submission?.id) return;
+        setDetectingAI(true);
+        try {
+            const res = await getAIDetection(submission.id);
+            setAiDetect(res.data);
+            onAIDetectUpdate(submission.id, res.data);
+        } catch (error) {
+            toast.error("Failed to run AI detection");
+        } finally {
+            setDetectingAI(false);
+        }
+    };
 
+    if (!submission) return null;
     return (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity z-10 flex justify-center items-center p-4">
-            <div className="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl">
-                <div className="bg-white dark:bg-gray-800 px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-                    <h3 className="text-lg font-semibold leading-6 text-gray-900 dark:text-gray-100" id="modal-title">
-                        Submission Details (Roll: {submission.roll}, Final Score: {submission.final_score.toFixed(2)})
-                    </h3>
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto p-2">
-                        {/* Left Column */}
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Submitted Code:</h4>
-                                <div className="mt-2 font-mono text-sm bg-gray-900 text-white p-4 rounded-md overflow-x-auto">
-                                    <pre><code>{submission.code}</code></pre>
-                                </div>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <Card className="max-w-3xl w-full max-h-[85vh] overflow-y-auto border-none shadow-2xl bg-surface scrollbar-thin scrollbar-thumb-overlay/20 scrollbar-track-transparent">
+                <CardHeader className="border-b border-overlay/5 flex flex-row items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        {submission.student_photo_url ? (
+                            <img src={submission.student_photo_url} alt="" className="w-10 h-10 rounded-full object-cover border border-overlay/10 shrink-0" />
+                        ) : (
+                            <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-sm font-bold text-primary">
+                                {(submission.student_name || '?').charAt(0).toUpperCase()}
                             </div>
-                             <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">AI Quality Comments:</h4>
-                                <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                    {submission.quality_comments.map((c, i) => <li key={i}>{c}</li>)}
-                                </ul>
-                            </div>
+                        )}
+                        <CardTitle className="text-xl text-primary">{submission.student_name || `Student #${submission.student_id}`}</CardTitle>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-full hover:bg-overlay/10 transition-colors">
+                        <X className="h-5 w-5 text-text-muted" />
+                    </button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div>
+                        <label className="text-xs text-text-muted uppercase tracking-wider mb-2 block">Submitted Code</label>
+                        <pre className="bg-background/50 border border-overlay/10 p-4 rounded-lg text-sm overflow-x-auto text-text-primary font-mono max-h-48">{submission.code}</pre>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-primary">{submission.raw_test_score.toFixed(1)}</p>
+                            <p className="text-xs text-text-muted">Test Score</p>
                         </div>
-                        {/* Right Column */}
-                        <div className="space-y-4">
-                             <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Test Case Breakdown ({passedTests}/{totalTests} Passed):</h4>
-                                <div className="mt-2 space-y-2 text-sm">
-                                    {submission.test_results.map((res, i) => (
-                                        <p key={i} className={res.passed ? 'text-green-500' : 'text-red-500'}>
-                                            Test Case {i + 1} ({res.type}): {res.passed ? 'Passed' : 'Failed'}
-                                        </p>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Error Analysis:</h4>
-                                {Object.keys(submission.error_counts).length > 0 ? (
-                                    <ul className="list-disc list-inside text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                        {Object.entries(submission.error_counts).map(([error, count]) => (
-                                            <li key={error}>{error}: {count} instance(s)</li>
-                                        ))}
-                                    </ul>
-                                ) : <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">No errors detected.</p>}
-                            </div>
-                            <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-200">Score Graph:</h4>
-                                <Bar options={chartOptions} data={chartData} />
-                            </div>
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-text-primary">{submission.quality_score}</p>
+                            <p className="text-xs text-text-muted">Quality</p>
+                        </div>
+                        <div className="bg-surface-dark/50 p-4 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-error">{submission.error_penalty}</p>
+                            <p className="text-xs text-text-muted">Penalty</p>
                         </div>
                     </div>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-900 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
-                    <button type="button" onClick={onClose} className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-700 dark:text-gray-100 px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 sm:mt-0 sm:w-auto">
-                        Close
-                    </button>
-                </div>
-            </div>
+
+                    {/* AI Analysis Section */}
+                    <div className="border-t border-overlay/5 pt-4">
+                        {!analysis ? (
+                            <Button onClick={runAnalysis} disabled={analyzing} className="w-full">
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                {analyzing ? "Analyzing..." : "Analyze with AI"}
+                            </Button>
+                        ) : (
+                            <div className="space-y-4">
+                                <h4 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-primary" /> AI Code Analysis
+                                </h4>
+
+                                <div className="bg-success/10 border border-success/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-success flex items-center gap-1 mb-2">
+                                        <ThumbsUp className="h-3 w-3" /> Strong Points
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.strong_points?.map((point, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {point}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+
+                                <div className="bg-error/10 border border-error/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-error flex items-center gap-1 mb-2">
+                                        <ThumbsDown className="h-3 w-3" /> Areas for Improvement
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.weak_points?.map((point, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {point}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+
+                                <div className="bg-warning/10 border border-warning/20 rounded-lg p-3">
+                                    <h5 className="text-xs font-semibold text-warning flex items-center gap-1 mb-2">
+                                        <Lightbulb className="h-3 w-3" /> Suggestions
+                                    </h5>
+                                    <ul className="space-y-1">
+                                        {analysis.suggestions?.map((suggestion, i) => (
+                                            <li key={i} className="text-xs text-text-muted">• {suggestion}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={runAnalysis}
+                                    disabled={analyzing}
+                                    className="w-full text-text-muted hover:text-primary border border-overlay/10"
+                                >
+                                    <Sparkles className="h-3.5 w-3.5 mr-2" />
+                                    {analyzing ? "Re-analyzing..." : "Re-analyze"}
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* AI Content Detection Section */}
+                    <div className="border-t border-overlay/5 pt-4">
+                        {!aiDetect ? (
+                            <Button onClick={runAIDetect} disabled={detectingAI} variant="outline" className="w-full border-warning/20 text-warning hover:bg-warning/10">
+                                <BotMessageSquare className="h-4 w-4 mr-2" />
+                                {detectingAI ? "Detecting..." : "Check AI-Generated Content"}
+                            </Button>
+                        ) : (() => {
+                            const s = VERDICT_STYLE[aiDetect.verdict] ?? VERDICT_STYLE.unknown;
+                            return (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                                            <BotMessageSquare className="h-4 w-4 text-warning" /> AI Content Detection
+                                        </h4>
+                                        <span className={`text-xs font-bold ${s.color}`}>{s.label}</span>
+                                    </div>
+
+                                    {/* Likelihood bar */}
+                                    <div>
+                                        <div className="flex justify-between text-xs text-text-muted mb-1">
+                                            <span>AI Likelihood</span>
+                                            <span className={`font-bold ${s.color}`}>{aiDetect.ai_likelihood}%</span>
+                                        </div>
+                                        <div className="w-full h-2 bg-overlay/10 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all duration-500 ${s.bar}`}
+                                                style={{ width: `${aiDetect.ai_likelihood}%` }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <p className="text-xs text-text-muted italic">{aiDetect.explanation}</p>
+
+                                    {aiDetect.indicators?.length > 0 && (
+                                        <div className="bg-overlay/[0.03] border border-overlay/[0.07] rounded-lg p-3">
+                                            <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Indicators</p>
+                                            <ul className="space-y-1">
+                                                {aiDetect.indicators.map((ind, i) => (
+                                                    <li key={i} className="text-xs text-text-muted">• {ind}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={runAIDetect}
+                                        disabled={detectingAI}
+                                        className="w-full text-text-muted hover:text-warning border border-overlay/10"
+                                    >
+                                        <BotMessageSquare className="h-3.5 w-3.5 mr-2" />
+                                        {detectingAI ? "Re-detecting..." : "Re-check"}
+                                    </Button>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 };
-// --- END MODAL COMPONENT ---
 
+const RISK_STYLE = {
+    high:    { bg: 'bg-error/10 border-error/20',    text: 'text-error',   icon: ShieldAlert,  label: 'High Risk'   },
+    medium:  { bg: 'bg-warning/10 border-warning/20', text: 'text-warning', icon: AlertTriangle, label: 'Medium Risk' },
+    low:     { bg: 'bg-success/10 border-success/20', text: 'text-success', icon: ShieldCheck,  label: 'Low Risk'   },
+    none:    { bg: 'bg-success/10 border-success/20', text: 'text-success', icon: ShieldCheck,  label: 'Clean'      },
+    unknown: { bg: 'bg-overlay/5 border-overlay/10',      text: 'text-text-muted', icon: ShieldAlert, label: 'Unknown'  },
+};
+
+const PlagiarismPanel = ({ assignmentId }) => {
+    const [report, setReport] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const runCheck = async () => {
+        setLoading(true);
+        try {
+            const res = await getPlagiarismReport(assignmentId);
+            setReport(res.data);
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Plagiarism check failed.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const style = report ? (RISK_STYLE[report.risk_level] ?? RISK_STYLE.unknown) : null;
+
+    return (
+        <Card className="border-none shadow-soft bg-surface">
+            <CardHeader className="border-b border-overlay/5">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <ShieldAlert className="h-5 w-5 text-warning" />
+                        <CardTitle className="text-text-primary">Plagiarism Check</CardTitle>
+                    </div>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={runCheck}
+                        disabled={loading}
+                        className="gap-1.5"
+                    >
+                        {loading
+                            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Analysing…</>
+                            : <><Sparkles className="h-3.5 w-3.5" /> {report ? 'Re-run' : 'Run Check'}</>
+                        }
+                    </Button>
+                </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+                {!report && !loading && (
+                    <p className="text-sm text-text-muted text-center py-4">
+                        Click <strong>Run Check</strong> to analyse all submissions for plagiarism.
+                    </p>
+                )}
+                {loading && (
+                    <div className="flex items-center justify-center gap-3 py-6 text-text-muted">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span className="text-sm">Comparing submissions with AI…</span>
+                    </div>
+                )}
+                {report && !loading && (
+                    <div className="space-y-4">
+                        {/* Overall verdict */}
+                        <div className={`flex items-center gap-3 p-3 rounded-lg border ${style.bg}`}>
+                            <style.icon className={`h-5 w-5 flex-shrink-0 ${style.text}`} />
+                            <div>
+                                <p className={`text-sm font-semibold ${style.text}`}>{style.label}</p>
+                                <p className="text-xs text-text-muted mt-0.5">{report.summary}</p>
+                            </div>
+                        </div>
+
+                        {/* Flagged pairs */}
+                        {report.flagged_pairs?.length > 0 ? (
+                            <div className="space-y-2">
+                                <p className="text-xs text-text-muted uppercase tracking-wider font-medium">Flagged Pairs</p>
+                                {report.flagged_pairs.map((pair, i) => (
+                                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-error/5 border border-error/15">
+                                        <AlertTriangle className="h-4 w-4 text-error flex-shrink-0 mt-0.5" />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-sm font-semibold text-text-primary font-mono">
+                                                    {pair.student_a || `#${pair.student_id_a}`} ↔ {pair.student_b || `#${pair.student_id_b}`}
+                                                </span>
+                                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                                                    pair.similarity_score >= 85 ? 'bg-error/20 text-error'
+                                                    : pair.similarity_score >= 70 ? 'bg-warning/20 text-warning'
+                                                    : 'bg-overlay/10 text-text-muted'
+                                                }`}>
+                                                    {pair.similarity_score}% similar
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-text-muted mt-1">{pair.reason}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-sm text-success text-center py-2">No suspicious pairs detected.</p>
+                        )}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+};
 
 export default function ViewResults() {
+    const { classroomId } = useAuth();
     const [assignments, setAssignments] = useState([]);
     const [selectedAssignment, setSelectedAssignment] = useState('');
     const [results, setResults] = useState([]);
@@ -125,138 +330,170 @@ export default function ViewResults() {
     const [selectedSubmission, setSelectedSubmission] = useState(null);
     const [isReleasing, setIsReleasing] = useState(false);
 
-    // Find the full assignment object from the list
+    const [analysisCache, setAnalysisCache] = useState({});
+    const [aiDetectCache, setAiDetectCache] = useState({});
+
+    const [alpha, setAlpha] = useState(0.6);
+    const [beta, setBeta] = useState(0.4);
+    const [gamma, setGamma] = useState(10.0);
+
     const currentAssignment = assignments.find(a => a.id === parseInt(selectedAssignment, 10));
 
     useEffect(() => {
-        const fetchAssignments = async () => {
-            try {
-                // This fetches the list of assignments for the dropdown
-                const response = await getAssignments();
-                setAssignments(response.data);
-                if (response.data.length > 0) {
-                    setSelectedAssignment(response.data[0].id);
-                }
-            } catch (error) {
-                toast.error('Failed to fetch assignments.');
-            }
-        };
-        fetchAssignments();
-    }, []);
+        getAssignments(classroomId).then(res => {
+            setAssignments(res.data);
+            if (res.data.length > 0) setSelectedAssignment(res.data[0].id);
+        });
+    }, [classroomId]);
 
     useEffect(() => {
         if (selectedAssignment) {
-            const fetchResults = async () => {
-                setLoading(true);
-                setResults([]);
-                try {
-                    // This fetches the list of submissions for the selected assignment
-                    const response = await getResults(selectedAssignment);
-                    setResults(response.data);
-                } catch (error) {
-                     toast.error(error.response?.data?.detail || 'Failed to fetch results.');
-                } finally {
-                    setLoading(false);
-                }
-            };
-            fetchResults();
+            setLoading(true);
+            getResults(selectedAssignment)
+                .then(res => setResults(res.data))
+                .catch(() => toast.error("Failed to load results"))
+                .finally(() => setLoading(false));
         }
     }, [selectedAssignment]);
 
-    // --- NEW FUNCTION ---
     const handleReleaseResults = async () => {
         if (!currentAssignment) return;
-        
+        if (!window.confirm(`Release results with weights?\nTest: ${alpha}\nQuality: ${beta}\nPenalty: ${gamma}`)) return;
+
         setIsReleasing(true);
         try {
-            await releaseResults(currentAssignment.id);
-            toast.success("Results released successfully!");
-            // Update the local state to reflect the change
-            setAssignments(prev => prev.map(a => 
-                a.id === currentAssignment.id ? { ...a, results_released: true } : a
-            ));
+            await releaseResults(currentAssignment.id, alpha, beta, gamma);
+            toast.success("Results released!");
+            setAssignments(prev => prev.map(a => a.id === currentAssignment.id ? { ...a, results_released: true } : a));
+            const res = await getResults(currentAssignment.id);
+            setResults(res.data);
         } catch (error) {
-            toast.error("Failed to release results.");
+            toast.error("Failed to release.");
         } finally {
             setIsReleasing(false);
         }
     };
 
     return (
-        <>
-            <div className="bg-white dark:bg-gray-800 p-6 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">View Results</h2>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Review submissions and scores.</p>
-                    </div>
-                    <div className="w-full max-w-xs">
-                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Assignment</label>
-                        <select
-                            className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent focus:border-accent"
-                            value={selectedAssignment}
-                            onChange={(e) => setSelectedAssignment(e.target.value)}
-                        >
-                            <option disabled value="">- Select -</option>
-                            {assignments.map(a => <option key={a.id} value={a.id}>{a.name} (ID: {a.id})</option>)}
-                        </select>
-                    </div>
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-text-primary">Result Manager</h1>
+                    <p className="text-text-muted mt-1">Review submissions and publish grades.</p>
                 </div>
-
-                {/* --- NEW BUTTON AND LOGIC --- */}
-                {currentAssignment && (
-                    <div className="flex justify-between items-center mb-4 border-t border-gray-700 pt-4">
-                        <span className='text-sm text-gray-400'>
-                            {results.length} / 72 Students Submitted
-                        </span>
-                        <button 
-                            onClick={handleReleaseResults}
-                            disabled={isReleasing || currentAssignment.results_released}
-                            className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
-                        >
-                            {isReleasing ? "Releasing..." : (currentAssignment.results_released ? "Results Released" : "Release Marks for This Assignment")}
-                        </button>
-                    </div>
-                )}
-                {/* --- END NEW --- */}
-
-                <div className="mt-6 flow-root">
-                    <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                        <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-                            <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
-                                <thead>
-                                    <tr>
-                                        <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100 sm:pl-0">Roll #</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Submitted At</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Final Score</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Test Score</th>
-                                        <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Quality Score</th>
-                                        <th className="relative py-3.5 pl-3 pr-4 sm:pr-0"><span className="sr-only">Details</span></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {loading && <tr><td colSpan="6" className="text-center p-4 text-gray-500 dark:text-gray-400">Loading...</td></tr>}
-                                    {!loading && results.length === 0 && <tr><td colSpan="6" className="text-center p-4 text-gray-500 dark:text-gray-400">No submissions found.</td></tr>}
-                                    {results.map(res => (
-                                        <tr key={res.id}>
-                                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-gray-200 sm:pl-0">{res.roll}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(res.submitted_at).toLocaleString()}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold dark:text-gray-200">{res.final_score.toFixed(2)}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{res.raw_test_score.toFixed(2)}</td>
-                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 dark:text-gray-400">{res.quality_score}</td>
-                                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
-                                                <button onClick={() => setSelectedSubmission(res)} className="text-accent hover:text-accent-hover">Details</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <div className="w-56 shrink-0">
+                    <Select
+                        value={selectedAssignment}
+                        onChange={(e) => setSelectedAssignment(e.target.value)}
+                    >
+                        <option disabled value="">Select Assignment</option>
+                        {assignments.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </Select>
                 </div>
             </div>
-            
-            {selectedSubmission && <SubmissionModal submission={selectedSubmission} onClose={() => setSelectedSubmission(null)} />}
-        </>
+
+            {currentAssignment && !currentAssignment.results_released && (
+                <Card className="border-none shadow-soft bg-surface">
+                    <CardHeader className="border-b border-overlay/5">
+                        <div className="flex items-center gap-2">
+                            <BarChart3 className="h-5 w-5 text-primary" />
+                            <CardTitle className="text-text-primary">Grading Configuration</CardTitle>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Test Priority ({alpha})</label>
+                                <input type="range" min="0" max="1" step="0.1" value={alpha} onChange={(e) => { const val = parseFloat(e.target.value); setAlpha(val); setBeta(parseFloat((1 - val).toFixed(1))); }} className="w-full accent-primary" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Quality Priority ({beta})</label>
+                                <input type="range" min="0" max="1" step="0.1" value={beta} disabled className="w-full opacity-50 accent-secondary" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-2">Error Penalty ({gamma})</label>
+                                <input type="range" min="0" max="50" step="5" value={gamma} onChange={(e) => setGamma(parseFloat(e.target.value))} className="w-full accent-error" />
+                            </div>
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <Button onClick={handleReleaseResults} disabled={isReleasing} className="bg-success hover:bg-success/90">
+                                {isReleasing ? "Publishing..." : "Publish Results"}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+
+            {currentAssignment && currentAssignment.results_released && (
+                <div className="bg-success/10 text-success p-4 rounded-lg text-center font-bold border border-success/20">
+                    ✓ Results Published
+                </div>
+            )}
+
+            <Card className="border-none shadow-soft bg-surface overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="text-left text-xs uppercase tracking-wider text-text-muted bg-surface-dark/50">
+                                <th className="px-6 py-4 font-medium">Student</th>
+                                <th className="px-6 py-4 font-medium">Test Score</th>
+                                <th className="px-6 py-4 font-medium">Quality</th>
+                                <th className="px-6 py-4 font-medium text-primary">Final</th>
+                                <th className="px-6 py-4 font-medium text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                <tr><td colSpan="5" className="text-center py-8 text-text-muted">Loading...</td></tr>
+                            ) : results.length === 0 ? (
+                                <tr><td colSpan="5" className="text-center py-8 text-text-muted">No submissions yet</td></tr>
+                            ) : results.map(res => (
+                                <tr key={res.id} className="border-t border-overlay/5 hover:bg-surface-dark/30 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            {res.student_photo_url ? (
+                                                <img src={res.student_photo_url} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 border border-overlay/10" />
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-xs font-bold text-primary">
+                                                    {(res.student_name || '?').charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-sm text-text-primary">{res.student_name || `Student #${res.student_id}`}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-text-muted">{res.raw_test_score.toFixed(1)}</td>
+                                    <td className="px-6 py-4 text-sm text-text-muted">{res.quality_score}</td>
+                                    <td className="px-6 py-4 text-sm font-bold text-primary">{res.final_score.toFixed(1)}</td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button
+                                            onClick={() => setSelectedSubmission(res)}
+                                            className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                                        >
+                                            <Eye className="h-4 w-4" /> View
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+
+            {/* Plagiarism checker — teacher only, shown whenever an assignment is selected */}
+            {selectedAssignment && (
+                <PlagiarismPanel key={selectedAssignment} assignmentId={selectedAssignment} />
+            )}
+
+            {selectedSubmission && (
+                <SubmissionModal
+                    submission={selectedSubmission}
+                    onClose={() => setSelectedSubmission(null)}
+                    analysisCache={analysisCache}
+                    onCacheUpdate={(id, data) => setAnalysisCache(prev => ({ ...prev, [id]: data }))}
+                    aiDetectCache={aiDetectCache}
+                    onAIDetectUpdate={(id, data) => setAiDetectCache(prev => ({ ...prev, [id]: data }))}
+                />
+            )}
+        </div>
     );
 }

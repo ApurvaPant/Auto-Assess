@@ -8,7 +8,7 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL, echo=False)
 
 def create_db_and_tables():
-    from app import models # Import here to avoid circular dependency
+    from app import models
     SQLModel.metadata.create_all(engine)
 
 def get_session():

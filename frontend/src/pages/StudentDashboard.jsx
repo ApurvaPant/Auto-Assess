@@ -1,148 +1,218 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getStudentAssignments } from '../api';
+import { Link, useNavigate } from 'react-router-dom';
+import { getStudentClassrooms, joinClassroom } from '../api/client';
+import client from '../api/client';
 import toast from 'react-hot-toast';
-
-// --- NEW Component for each row ---
-const AssignmentRow = ({ assignment, roll }) => {
-    const { 
-        assignment_id, 
-        assignment_name, 
-        package_title, 
-        has_submitted, 
-        results_released, 
-        final_score 
-    } = assignment;
-
-    let statusElement;
-    if (has_submitted && results_released) {
-        // 4. Submitted and Graded
-        statusElement = (
-            <div className="text-right">
-                <span className="font-semibold text-gray-100">{final_score.toFixed(2)} / 100</span>
-                <Link 
-                    to={`/student/results/${assignment_id}`} 
-                    className="ml-4 rounded-md bg-transparent px-3 py-1.5 text-sm font-semibold text-accent ring-1 ring-inset ring-accent hover:bg-accent hover:text-white"
-                >
-                    View Results
-                </Link>
-            </div>
-        );
-    } else if (has_submitted && !results_released) {
-        // 3. Submitted and Waiting for Grade
-        statusElement = (
-             <Link 
-                to={`/student/assignment/${assignment_id}`}
-                className="rounded-md bg-gray-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm cursor-pointer"
-            >
-                Submitted (View)
-            </Link>
-        );
-    } else {
-        // 1. Not Submitted
-        statusElement = (
-            <Link 
-                to={`/student/assignment/${assignment_id}`} 
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-accent-hover"
-            >
-                Start Assignment
-            </Link>
-        );
-    }
-
-    return (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm p-4 flex justify-between items-center">
-            <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{assignment_name}</p>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-200">{package_title || '[Untitled Assignment]'}</h2>
-            </div>
-            <div className="flex items-center space-x-4">
-                {statusElement}
-            </div>
-        </div>
-    );
-};
-
+import { Card, CardContent } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { useTheme } from '../contexts/ThemeContext';
+import { LogOut, BookOpen, Users, ArrowRight, Plus, FolderOpen, Sun, Moon } from 'lucide-react';
 
 export default function StudentDashboard() {
-    const [allAssignments, setAllAssignments] = useState([]);
+    const [classrooms, setClassrooms] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('assigned'); // 'assigned' or 'submitted'
-    const { roll } = useParams();
+    const [studentName, setStudentName] = useState('');
+    const [photoUrl, setPhotoUrl] = useState(null);
+    const [joinCode, setJoinCode] = useState('');
+    const [joining, setJoining] = useState(false);
+    const navigate = useNavigate();
+    const { theme, toggleTheme } = useTheme();
+
+    const fetchData = async () => {
+        try {
+            const [classroomsRes, profileRes] = await Promise.all([
+                getStudentClassrooms(),
+                client.get('/student/profile'),
+            ]);
+            setClassrooms(classroomsRes.data);
+            if (profileRes.data.name) setStudentName(profileRes.data.name);
+            if (profileRes.data.photo_url) setPhotoUrl(profileRes.data.photo_url);
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to load data.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         const token = localStorage.getItem('studentAuthToken');
         if (!token) {
-            toast.error("Not authorized. Please log in.");
-            setLoading(false);
+            toast.error('Not authorized. Please log in.');
+            navigate('/student', { replace: true });
             return;
         }
 
-        const fetchAssignments = async () => {
-            try {
-                const response = await getStudentAssignments();
-                setAllAssignments(response.data);
-            } catch (error) {
-                toast.error(error.response?.data?.detail || "Failed to fetch assignments.");
-            } finally {
-                setLoading(false);
-            }
-        };
+        try {
+            JSON.parse(atob(token.split('.')[1])).sub;
+        } catch {
+            localStorage.removeItem('studentAuthToken');
+            toast.error('Invalid session. Please log in again.');
+            navigate('/student', { replace: true });
+            return;
+        }
 
-        fetchAssignments();
-    }, []);
+        fetchData();
+    }, [navigate]);
 
-    const filteredAssignments = allAssignments.filter(a => 
-        filter === 'assigned' ? !a.has_submitted : a.has_submitted
-    );
+    const handleJoinClassroom = async (e) => {
+        e.preventDefault();
+        if (!joinCode.trim()) return;
+        setJoining(true);
+        try {
+            await joinClassroom(joinCode.trim());
+            toast.success('Joined classroom successfully!');
+            setJoinCode('');
+            // Refetch classrooms
+            const res = await getStudentClassrooms();
+            setClassrooms(res.data);
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to join classroom.');
+        } finally {
+            setJoining(false);
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('studentAuthToken');
+        toast.success('Logged out successfully');
+        navigate('/student');
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <p className="text-text-muted">Loading...</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
-            <h1 className="text-3xl font-bold text-gray-100">Welcome, Student {roll}</h1>
-            
-            {/* --- NEW Filter Tabs --- */}
-            <div className="mt-6 border-b border-gray-700">
-                <nav className="-mb-px flex space-x-6" aria-label="Tabs">
-                    <button
-                        onClick={() => setFilter('assigned')}
-                        className={`py-2 px-1 border-b-2 font-medium text-sm
-                            ${filter === 'assigned' 
-                                ? 'border-accent text-accent' 
-                                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                            }`}
-                    >
-                        Assigned
-                    </button>
-                    <button
-                        onClick={() => setFilter('submitted')}
-                        className={`py-2 px-1 border-b-2 font-medium text-sm
-                            ${filter === 'submitted' 
-                                ? 'border-accent text-accent' 
-                                : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                            }`}
-                    >
-                        Submitted
-                    </button>
-                </nav>
-            </div>
+        <div className="min-h-screen bg-background relative overflow-hidden">
+            {/* Global Background Effects */}
+            <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-overlay/5 blur-[120px] pointer-events-none" />
+            <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-overlay/5 blur-[120px] pointer-events-none" />
 
-            <div className="mt-8 space-y-4">
-                {loading && <p className="text-gray-400">Loading assignments...</p>}
-                
-                {!loading && filteredAssignments.length === 0 && (
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center text-gray-400">
-                        {filter === 'assigned' ? "You have no assignments to do." : "You have not submitted any assignments."}
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+                <div className="space-y-8 animate-in fade-in duration-500">
+                    {/* Header */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            {photoUrl ? (
+                                <img src={photoUrl} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-primary/20 shrink-0" />
+                            ) : (
+                                <div className="w-14 h-14 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center shrink-0 text-xl font-bold text-primary">
+                                    {(studentName || 'S').charAt(0).toUpperCase()}
+                                </div>
+                            )}
+                            <div>
+                                <h1 className="text-3xl font-bold tracking-tight text-text-primary">
+                                    Welcome, {studentName || 'Student'}
+                                </h1>
+                                <p className="text-text-muted mt-1">Your classrooms and assignments</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={toggleTheme}
+                                className="h-9 w-9 text-text-muted hover:text-text-primary"
+                                aria-label="Toggle theme"
+                            >
+                                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                            </Button>
+                            <Link to="/student/profile">
+                                <Button variant="ghost" size="sm" className="text-text-muted hover:text-primary">
+                                    Manage Account
+                                </Button>
+                            </Link>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleLogout}
+                                className="border-error/20 text-error hover:bg-error/10"
+                            >
+                                <LogOut className="mr-2 h-4 w-4" />
+                                Logout
+                            </Button>
+                        </div>
                     </div>
-                )}
 
-                {filteredAssignments.map(asgn => (
-                    <AssignmentRow key={asgn.assignment_id} assignment={asgn} roll={roll} />
-                ))}
-            </div>
-             <div className="mt-6 text-center">
-                 <Link to="/student/change-password" className="text-sm text-accent hover:underline">
-                    Change Password (DOB)
-                </Link>
+                    {/* Join Classroom Section */}
+                    <Card className="border-none shadow-soft bg-surface">
+                        <CardContent className="p-6">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                                    <Plus className="h-5 w-5 text-primary" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-text-primary">Join a Classroom</h2>
+                                    <p className="text-sm text-text-muted">Enter the 6-character code from your teacher</p>
+                                </div>
+                            </div>
+                            <form onSubmit={handleJoinClassroom} className="flex gap-3 items-end">
+                                <div className="flex-1 max-w-xs">
+                                    <Input
+                                        type="text"
+                                        value={joinCode}
+                                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                                        placeholder="e.g. ABC123"
+                                        maxLength={6}
+                                    />
+                                </div>
+                                <Button type="submit" size="md" variant="secondary" isLoading={joining} className="gap-1.5 shrink-0">
+                                    Join <ArrowRight className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
+
+                    {/* Classrooms Grid */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-4">
+                            <FolderOpen className="h-5 w-5 text-text-muted" />
+                            <h2 className="text-lg font-semibold text-text-primary">Your Classrooms</h2>
+                            <span className="text-sm text-text-muted">({classrooms.length})</span>
+                        </div>
+
+                        {classrooms.length === 0 ? (
+                            <div className="rounded-xl border-2 border-dashed border-overlay/[0.07] p-12 text-center">
+                                <BookOpen className="h-10 w-10 text-text-muted opacity-40 mx-auto mb-3" />
+                                <h3 className="text-lg font-semibold text-text-primary mb-1">No classrooms yet</h3>
+                                <p className="text-sm text-text-muted max-w-md mx-auto">
+                                    Join your first classroom using a code from your teacher
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {classrooms.map((classroom) => (
+                                    <Card key={classroom.id} className="border-none shadow-soft bg-surface hover:bg-surface-dark/50 transition-colors">
+                                        <CardContent className="p-5 flex flex-col gap-4">
+                                            <div>
+                                                <h3 className="text-lg font-bold text-text-primary">{classroom.name}</h3>
+                                                <p className="text-sm text-text-muted mt-1">
+                                                    <Users className="inline h-3.5 w-3.5 mr-1 relative -top-px" />
+                                                    {classroom.teacher_name || 'Teacher'}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-text-muted">
+                                                    {classroom.assignment_count ?? 0} assignment{(classroom.assignment_count ?? 0) !== 1 ? 's' : ''}
+                                                </span>
+                                                <Link to={`/student/classroom/${classroom.id}`}>
+                                                    <Button size="sm" className="rounded-[8px] shadow-none group">
+                                                        View Assignments <ArrowRight className="ml-1.5 h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                                                    </Button>
+                                                </Link>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </div>
     );

@@ -11,13 +11,8 @@ from app.constants import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# --- THIS IS THE FIX ---
-# We create TWO different security schemes.
-# One for the teacher's login page
 teacher_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/teacher/login")
-# A second, simple one to grab the token from the header for student routes
-student_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/student/login") 
-# --- END FIX ---
+student_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/student/login")
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -32,10 +27,10 @@ def authenticate_teacher(db: Session, username: str, password: str) -> Optional[
         return None
     return teacher
 
-def authenticate_student(db: Session, roll: int, dob: str) -> Optional[models.Student]:
+def authenticate_student(db: Session, email: str, password: str) -> Optional[models.Student]:
     from app import crud
-    student = crud.get_student_by_roll(db, roll=roll)
-    if not student or not verify_password(dob, student.hashed_dob):
+    student = crud.get_student_by_email(db, email=email)
+    if not student or not verify_password(password, student.hashed_password):
         return None
     return student
 
@@ -57,3 +52,15 @@ def get_current_teacher(token: str = Depends(teacher_oauth2_scheme), db: Session
     teacher = crud.get_teacher_by_username(db, username=username)
     if teacher is None: raise credentials_exception
     return teacher
+
+def get_current_student(token: str = Depends(student_oauth2_scheme), db: Session = Depends(get_session)) -> models.Student:
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        student_id = payload.get("sub")
+        if student_id is None: raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    student = db.get(models.Student, int(student_id))
+    if student is None: raise credentials_exception
+    return student
