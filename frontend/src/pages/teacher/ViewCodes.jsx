@@ -45,7 +45,7 @@ const CodeRow = ({ codeLine, mode }) => {
     }
 
     return (
-        <tr className={`border-b border-white/5 ${isUsed ? 'opacity-60' : ''}`}>
+        <tr className={`border-b border-overlay/5 ${isUsed ? 'opacity-60' : ''}`}>
             <td className="py-3 px-4 text-sm text-text-primary font-mono">{rollNo || '—'}</td>
             <td className="py-3 px-4 text-sm text-text-muted">{name || '—'}</td>
             <td className="py-3 px-4 text-center">
@@ -61,15 +61,15 @@ const CodeRow = ({ codeLine, mode }) => {
                 )}
             </td>
             <td className="py-3 px-4 text-center">
-                {isUsed ? (
-                    <span className="inline-flex items-center gap-1 text-success">
-                        <CheckCircle className="h-5 w-5" />
-                        <span className="text-xs">Changed</span>
+                {usesRemaining < 2 ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-success/15 text-success border border-success/20">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Updated
                     </span>
                 ) : (
-                    <span className="inline-flex items-center gap-1 text-text-muted">
-                        <XCircle className="h-5 w-5 opacity-50" />
-                        <span className="text-xs">Pending</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-overlay/[0.05] text-text-muted border border-overlay/10">
+                        <XCircle className="h-3.5 w-3.5 opacity-60" />
+                        Pending
                     </span>
                 )}
             </td>
@@ -114,7 +114,7 @@ export default function ViewCodes() {
             </div>
 
             <Card className="border-none shadow-soft bg-surface">
-                <CardHeader className="border-b border-white/5">
+                <CardHeader className="border-b border-overlay/5">
                     <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                             <Key className="h-5 w-5" />

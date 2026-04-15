@@ -4,11 +4,11 @@ import { cn } from '../../lib/utils';
 const Input = React.forwardRef(({ className, type, label, error, ...props }, ref) => {
   return (
     <div className="w-full">
-      {label && <label className="mb-2 block text-sm font-medium text-text-muted">{label}</label>}
+      {label && <label className="mb-2 block text-sm font-semibold text-text-secondary">{label}</label>}
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-text-primary file:border-0 file:bg-primary file:text-white file:text-sm file:font-medium file:mr-3 file:px-3 file:py-1 file:rounded-md placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200",
+          "flex h-12 w-full rounded-xl border border-overlay/15 bg-overlay/[0.03] px-4 py-2 text-sm text-text-primary file:border-0 file:bg-primary file:text-primary-foreground file:text-sm file:font-semibold file:mr-3 file:px-4 file:py-1 file:rounded-md placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-overlay/20 focus-visible:border-overlay/25 disabled:cursor-not-allowed disabled:opacity-40 transition-all duration-200",
           error && "border-error focus-visible:ring-error",
           className
         )}

@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getStudentAssignment, submitSolution, runCode } from '../api/client';
 import toast from 'react-hot-toast';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown from 'react-markdown';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Play, Send, ArrowLeft, Terminal, CheckCircle, XCircle, AlertCircle, Lock } from 'lucide-react';
+import { Play, Send, ArrowLeft, Terminal, CheckCircle, XCircle, AlertCircle, Lock, CalendarClock } from 'lucide-react';
 
 // LeetCode-style Test Case Result - shows details for first 2 failed sample tests
 const TestCaseResult = ({ result, testCase, index, isSubmit = false, showDetails = false }) => {
@@ -14,12 +14,10 @@ const TestCaseResult = ({ result, testCase, index, isSubmit = false, showDetails
     const testType = result.testcase_type || (isSubmit && result.type) || testCase?.type;
     const isHidden = testType === 'hidden';
 
-    // Show expanded details only for: sample tests that failed AND showDetails is true
     const shouldShowDetails = showDetails && !isPassed && !isHidden && testCase;
 
     return (
         <div className={`rounded-lg border overflow-hidden ${isPassed ? 'bg-success/5 border-success/20' : 'bg-error/5 border-error/20'}`}>
-            {/* Header row - always visible */}
             <div className="p-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     {isPassed ? <CheckCircle className="h-5 w-5 text-success" /> : <XCircle className="h-5 w-5 text-error" />}
@@ -46,12 +44,11 @@ const TestCaseResult = ({ result, testCase, index, isSubmit = false, showDetails
                 )}
             </div>
 
-            {/* Expanded details - LeetCode style */}
             {shouldShowDetails && (
-                <div className="border-t border-white/5 bg-background/30 p-3 space-y-3 font-mono text-xs">
+                <div className="border-t border-overlay/5 bg-background/30 p-3 space-y-3 font-mono text-xs">
                     <div>
                         <p className="text-text-muted mb-1 font-sans font-medium">Input:</p>
-                        <pre className="p-2 bg-surface-dark rounded border border-white/5 overflow-x-auto text-text-primary whitespace-pre-wrap">
+                        <pre className="p-2 bg-surface-dark rounded border border-overlay/5 overflow-x-auto text-text-primary whitespace-pre-wrap">
                             {testCase.input || "(empty)"}
                         </pre>
                     </div>
@@ -75,6 +72,13 @@ const TestCaseResult = ({ result, testCase, index, isSubmit = false, showDetails
                             </pre>
                         </div>
                     )}
+                    {result.explanation && (
+                        <div className="pt-1">
+                            <p className="text-text-muted font-sans text-[11px] italic opacity-70">
+                                AI: {result.explanation}
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -83,36 +87,31 @@ const TestCaseResult = ({ result, testCase, index, isSubmit = false, showDetails
 
 export default function StudentAssignmentPage() {
     const { assignment_id } = useParams();
+    const navigate = useNavigate();
     const [assignmentData, setAssignmentData] = useState(null);
     const [code, setCode] = useState('# Enter your Python code here\n# Use sys.stdin.readline() to read input');
 
-    // States
     const [hasSubmitted, setHasSubmitted] = useState(false);
     const [resultsReleased, setResultsReleased] = useState(false);
     const [runResult, setRunResult] = useState(null);
     const [submitResult, setSubmitResult] = useState(null);
     const [isRunLoading, setIsRunLoading] = useState(false);
     const [isSubmitLoading, setIsSubmitLoading] = useState(false);
-
-    const getRollFromToken = () => {
-        const token = localStorage.getItem('studentAuthToken');
-        if (!token) return null;
-        try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            return payload.sub;
-        } catch (e) { return null; }
-    };
-
-    const studentRoll = getRollFromToken();
+    const [showConfirm, setShowConfirm] = useState(false);
 
     useEffect(() => {
-        if (!assignment_id || !studentRoll) return;
+        const token = localStorage.getItem('studentAuthToken');
+        if (!token) {
+            toast.error('Not authorized. Please log in.');
+            navigate('/student', { replace: true });
+            return;
+        }
+        if (!assignment_id) return;
+
         const fetchAssignment = async () => {
             try {
-                const response = await getStudentAssignment(assignment_id, studentRoll);
+                const response = await getStudentAssignment(assignment_id);
                 setAssignmentData(response.data);
-                // If previously submitted, we might want to fetch that code too, but MVP starts fresh or uses local storage if needed. 
-                // For now, simple logic.
                 setHasSubmitted(response.data.has_submitted);
                 setResultsReleased(response.data.results_released);
             } catch (error) {
@@ -120,14 +119,14 @@ export default function StudentAssignmentPage() {
             }
         };
         fetchAssignment();
-    }, [assignment_id, studentRoll]);
+    }, [assignment_id, navigate]);
 
     const handleRun = async () => {
         setIsRunLoading(true);
         setRunResult(null);
         setSubmitResult(null);
         try {
-            const response = await runCode(studentRoll, assignment_id, code);
+            const response = await runCode(assignment_id, code);
             setRunResult(response.data);
             toast.success("Run complete!");
         } catch (error) {
@@ -137,12 +136,12 @@ export default function StudentAssignmentPage() {
         }
     };
 
-    const handleSubmit = async () => {
+    const doSubmit = async () => {
         setIsSubmitLoading(true);
         setRunResult(null);
         setSubmitResult(null);
         try {
-            const response = await submitSolution(studentRoll, assignment_id, code);
+            const response = await submitSolution(assignment_id, code);
             setSubmitResult(response.data);
             setHasSubmitted(true);
             toast.success('Submission successful!');
@@ -161,52 +160,66 @@ export default function StudentAssignmentPage() {
         );
     }
 
-    const isLocked = resultsReleased;
+    const deadline = assignmentData.deadline ? new Date(assignmentData.deadline) : null;
+    const isPastDeadline = deadline && new Date() > deadline;
+    const isLocked = resultsReleased || isPastDeadline;
 
     return (
-        <div className="max-w-[1600px] mx-auto p-4 lg:p-6 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link to={`/student/dashboard/${studentRoll}`}>
-                        <Button variant="ghost" size="icon" className="rounded-full">
-                            <ArrowLeft className="h-5 w-5" />
+        <div className="h-screen flex flex-col overflow-hidden bg-background animate-in fade-in duration-500">
+            <header className="flex-none flex items-center justify-between px-4 lg:px-6 py-3 border-b border-overlay/[0.06] bg-background/80 backdrop-blur-sm">
+                <div className="flex items-center gap-3">
+                    <Link to="/student/dashboard">
+                        <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
+                            <ArrowLeft className="h-4 w-4" />
                         </Button>
                     </Link>
                     <div>
-                        <h1 className="text-2xl font-bold text-text-primary tracking-tight">{assignmentData.package_title}</h1>
-                        <div className="flex items-center gap-2 mt-1">
-                            {isLocked && <span className="text-xs font-medium bg-warning/20 text-warning px-2 py-0.5 rounded flex items-center gap-1"><Lock className="h-3 w-3" /> Practice Mode (Results Released)</span>}
+                        <h1 className="text-lg font-bold text-text-primary tracking-tight leading-tight">{assignmentData.package_title}</h1>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                            {isPastDeadline && <span className="text-xs font-medium bg-error/20 text-error px-2 py-0.5 rounded flex items-center gap-1"><Lock className="h-3 w-3" /> Deadline Passed</span>}
+                            {resultsReleased && !isPastDeadline && <span className="text-xs font-medium bg-warning/20 text-warning px-2 py-0.5 rounded flex items-center gap-1"><Lock className="h-3 w-3" /> Practice Mode</span>}
                             {hasSubmitted && !isLocked && <span className="text-xs font-medium bg-success/20 text-success px-2 py-0.5 rounded flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Submitted</span>}
+                            {deadline && !isPastDeadline && (
+                                <span className="text-xs font-medium text-text-muted flex items-center gap-1">
+                                    <CalendarClock className="h-3 w-3" /> Due {deadline.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })} IST
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <Button
                         variant="secondary"
                         onClick={handleRun}
-                        disabled={isRunLoading || isSubmitLoading || isLocked}
-                        className="min-w-[100px]"
+                        disabled={isRunLoading || isSubmitLoading || isLocked || hasSubmitted}
+                        className="min-w-[90px]"
                     >
-                        {isRunLoading ? <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Play className="mr-2 h-4 w-4" />}
+                        {isRunLoading ? <div className="animate-spin mr-1.5 h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Play className="mr-1.5 h-4 w-4" />}
                         Run
                     </Button>
-                    <Button
-                        onClick={handleSubmit}
-                        disabled={isRunLoading || isSubmitLoading || isLocked}
-                        className="min-w-[100px] shadow-lg shadow-primary/25"
-                    >
-                        {isSubmitLoading ? <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Send className="mr-2 h-4 w-4" />}
-                        Submit
-                    </Button>
+                    {hasSubmitted ? (
+                        <Button disabled className="min-w-[120px] opacity-60 cursor-not-allowed">
+                            <CheckCircle className="mr-1.5 h-4 w-4" />
+                            Already Submitted
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={() => setShowConfirm(true)}
+                            disabled={isRunLoading || isSubmitLoading || isLocked}
+                            className="min-w-[90px]"
+                        >
+                            {isSubmitLoading ? <div className="animate-spin mr-1.5 h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Send className="mr-1.5 h-4 w-4" />}
+                            Submit
+                        </Button>
+                    )}
                 </div>
-            </div>
+            </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-140px)]">
-                {/* Left Column: Problem Statement */}
+            <div className="flex-1 min-h-0 p-4 lg:p-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
                 <Card className="border-none shadow-soft bg-surface flex flex-col h-full overflow-hidden">
-                    <CardHeader className="bg-surface-dark/50 border-b border-white/5 py-3">
+                    <CardHeader className="bg-surface-dark/50 border-b border-overlay/5 py-3">
                         <CardTitle className="text-base font-medium flex items-center gap-2">
                             <Terminal className="h-4 w-4 text-primary" />
                             Problem Description
@@ -219,9 +232,7 @@ export default function StudentAssignmentPage() {
                     </CardContent>
                 </Card>
 
-                {/* Right Column: Editor (60%) & Results (40%) - fixed 60:40 split */}
                 <div className="flex flex-col h-full gap-3 min-h-0">
-                    {/* Code Editor - 60% - fixed height with scroll inside editor */}
                     <div className="h-[60%] min-h-0 rounded-xl overflow-hidden border border-surface-dark shadow-soft bg-[#1e1e1e] shrink-0">
                         <Editor
                             height="100%"
@@ -241,9 +252,8 @@ export default function StudentAssignmentPage() {
                         />
                     </div>
 
-                    {/* Results Area - 40% - fixed height with scrollable content */}
                     <Card className="h-[40%] min-h-0 border-none shadow-soft bg-surface flex flex-col overflow-hidden shrink-0">
-                        <CardHeader className="bg-surface-dark/50 border-b border-white/5 py-2 flex flex-row items-center justify-between shrink-0">
+                        <CardHeader className="bg-surface-dark/50 border-b border-overlay/5 py-2 flex flex-row items-center justify-between shrink-0">
                             <CardTitle className="text-sm font-medium">
                                 {submitResult ? 'Submission Results' : runResult ? 'Execution Results' : 'Test Results'}
                             </CardTitle>
@@ -268,13 +278,10 @@ export default function StudentAssignmentPage() {
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    {/* Run Results - ALL test cases shown, but only first 1 failed sample with details */}
                                     {runResult?.results.map((res, i) => {
-                                        // Count failed sample tests so far to limit details to first 1
                                         const failedSampleCount = runResult.results
                                             .slice(0, i)
                                             .filter(r => !r.passed && r.testcase_type !== 'hidden').length;
-                                        // Show details only for the FIRST failed sample test case
                                         const showDetails = failedSampleCount < 1 && !res.passed && res.testcase_type !== 'hidden';
 
                                         return (
@@ -288,12 +295,10 @@ export default function StudentAssignmentPage() {
                                         );
                                     })}
 
-                                    {/* Submit Results - ALL test cases shown, but only first 1 failed sample with details */}
                                     {submitResult?.test_results.map((res, i) => {
                                         const failedSampleCount = submitResult.test_results
                                             .slice(0, i)
                                             .filter(r => !r.passed && r.type !== 'hidden').length;
-                                        // Show details only for the FIRST failed sample test case
                                         const showDetails = failedSampleCount < 1 && !res.passed && res.type !== 'hidden';
 
                                         const testCase = assignmentData.sample_testcases?.find(tc => tc.id === res.testcase_id)
@@ -316,6 +321,39 @@ export default function StudentAssignmentPage() {
                     </Card>
                 </div>
             </div>
+            </div>
+
+            {/* Submission Confirmation Modal */}
+            {showConfirm && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface border border-overlay/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+                                <AlertCircle className="h-5 w-5 text-warning" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-text-primary">Confirm Submission</h3>
+                                <p className="text-xs text-text-muted mt-0.5">This action cannot be undone.</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-text-secondary leading-relaxed">
+                            Once submitted, you <span className="font-semibold text-text-primary">cannot re-submit</span> or make further changes. Make sure your solution is complete.
+                        </p>
+                        <div className="flex gap-3 justify-end pt-1">
+                            <Button variant="outline" onClick={() => setShowConfirm(false)} disabled={isSubmitLoading}>
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => { setShowConfirm(false); doSubmit(); }}
+                                disabled={isSubmitLoading}
+                            >
+                                {isSubmitLoading ? <div className="animate-spin mr-1.5 h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Send className="mr-1.5 h-4 w-4" />}
+                                Yes, Submit
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

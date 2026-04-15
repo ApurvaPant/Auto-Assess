@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime
+from datetime import datetime
 from sqlmodel import SQLModel
 
 class TestCase(SQLModel):
@@ -23,6 +23,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+# ─── Teacher ──────────────────────────────────────────────────────────────────
 class TeacherLogin(BaseModel):
     username: str
     password: str
@@ -31,28 +32,83 @@ class GenerateQuestionsRequest(BaseModel):
     topic: str
     difficulty: str = Field(default="easy", pattern="^(easy|medium|hard)$")
     n_questions: int = Field(gt=0, le=20)
+    classroom_id: int
 
 class GenerateFromTextRequest(BaseModel):
     text: str
     difficulty: str = Field(default="easy", pattern="^(easy|medium|hard)$")
     n_questions: int = Field(gt=0, le=20)
+    classroom_id: int
 
 class AssignmentCreate(BaseModel):
     assignment_name: str
     package_ids: List[int] = Field(min_length=1)
+    classroom_id: int
+    deadline: Optional[datetime] = None
 
 class ReleaseResultsRequest(BaseModel):
     alpha: float = Field(ge=0.0, le=1.0)
     beta: float = Field(ge=0.0, le=1.0)
     gamma: float = Field(ge=0.0)
 
+class ClassroomCreate(BaseModel):
+    name: str
+
+class ClassroomPublic(BaseModel):
+    id: int
+    name: str
+    code: str
+    created_at: datetime
+    student_count: int = 0
+    assignment_count: int = 0
+    class Config:
+        from_attributes = True
+
+# ─── Student ──────────────────────────────────────────────────────────────────
+class StudentSignup(BaseModel):
+    email: str
+    name: str
+    password: str
+
+class StudentLogin(BaseModel):
+    email: str
+    password: str
+
+class JoinClassroomRequest(BaseModel):
+    code: str
+
+class StudentClassroomPublic(BaseModel):
+    id: int
+    name: str
+    code: str
+    teacher_name: str = ""
+    assignment_count: int = 0
+
+class StudentAssignmentDetails(BaseModel):
+    assignment_id: int
+    assignment_name: str
+    package_title: str
+    has_submitted: bool
+    results_released: bool
+    final_score: Optional[float] = None
+    classroom_name: Optional[str] = None
+    deadline: Optional[datetime] = None
+
+class StudentAssignmentPublic(BaseModel):
+    assignment_name: str
+    package_title: str
+    package_prompt: str
+    sample_testcases: List[TestCase]
+    has_submitted: bool = False
+    results_released: bool = False
+    deadline: Optional[datetime] = None
+
+# ─── Submission / Run ─────────────────────────────────────────────────────────
 class SubmissionCreate(BaseModel):
-    roll: int
     assignment_id: int
     code: str
 
 class RunCodeRequest(BaseModel):
-    roll: int
     assignment_id: int
     code: str
 
@@ -63,6 +119,7 @@ class RunCodeResult(BaseModel):
     timed_out: bool
     passed: bool
     testcase_type: str
+    explanation: str = ""
 
 class RunCodeResponse(BaseModel):
     overall_output: str
@@ -71,7 +128,9 @@ class RunCodeResponse(BaseModel):
 class SubmissionResult(BaseModel):
     id: int
     student_assignment_id: int
-    roll: int
+    student_id: int
+    student_name: Optional[str] = None
+    student_photo_url: Optional[str] = None
     final_score: float
     raw_test_score: float
     quality_score: int
@@ -84,37 +143,29 @@ class SubmissionResult(BaseModel):
     class Config:
         from_attributes = True
 
-class StudentAssignmentPublic(BaseModel):
-    assignment_name: str
-    package_title: str
-    package_prompt: str
-    sample_testcases: List[TestCase]
-    has_submitted: bool = False
-    results_released: bool = False
-    
-class StudentLogin(BaseModel):
-    roll: int
-    dob: str
-
-class StudentAssignmentDetails(BaseModel):
-    assignment_id: int
-    assignment_name: str
-    package_title: str
-    has_submitted: bool
-    results_released: bool
-    final_score: Optional[float] = None
-
-class DobChangeRequest(BaseModel):
-    roll: int
-    new_dob: str # YYYY-MM-DD
-    code: str
-    name: Optional[str] = None # Added optional name update
-
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
-    new_dob: Optional[str] = None
-    code: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
-class TeacherCodeResponse(BaseModel):
-    codes: List[str]
-    mode: str
+
+
+# ─── Doubts ───────────────────────────────────────────────────────────────────
+class DoubtCreate(BaseModel):
+    question: str
+    assignment_id: Optional[int] = None
+
+class DoubtReply(BaseModel):
+    reply: str
+
+class DoubtPublic(BaseModel):
+    id: int
+    question: str
+    reply: Optional[str] = None
+    student_name: Optional[str] = None
+    assignment_id: Optional[int] = None
+    assignment_name: Optional[str] = None
+    created_at: datetime
+    replied_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True

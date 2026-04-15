@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { loginTeacher } from '../api/client';
 import toast from 'react-hot-toast';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Lock, ArrowRight } from 'lucide-react';
+import { Lock, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export default function TeacherLogin() {
     const [username, setUsername] = useState('teacher');
@@ -31,23 +30,33 @@ export default function TeacherLogin() {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-background relative overflow-hidden">
-            {/* Premium Background Effects */}
-            <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary/20 blur-[120px]" />
-            <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-secondary/10 blur-[120px]" />
+        <div className="min-h-screen bg-background flex flex-col">
+            {/* Top bar */}
+            <div className="px-6 py-5">
+                <Link to="/">
+                    <Button variant="ghost" size="sm" className="gap-1.5 text-text-muted">
+                        <ArrowLeft className="h-4 w-4" /> Back
+                    </Button>
+                </Link>
+            </div>
 
-            <Card className="w-full max-w-md border-none bg-surface/80 backdrop-blur-2xl shadow-2xl z-10 animate-in fade-in zoom-in duration-500">
-                <CardHeader className="text-center space-y-4 pb-2">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/50 text-white shadow-lg shadow-primary/30">
-                        <Lock className="h-8 w-8" />
+            {/* Centered form */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 pb-24">
+                <div className="w-full max-w-sm space-y-10">
+
+                    {/* Icon + heading */}
+                    <div className="text-center space-y-4">
+                        <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-overlay/[0.07] border border-overlay/10 mx-auto">
+                            <Lock className="h-8 w-8 text-text-primary" />
+                        </div>
+                        <div>
+                            <h1 className="text-4xl font-black tracking-tight text-text-primary">Teacher Access</h1>
+                            <p className="text-sm text-text-muted mt-2 leading-relaxed">Secure login for faculty members</p>
+                        </div>
                     </div>
-                    <div>
-                        <CardTitle className="text-3xl font-bold text-text-primary tracking-tight">Teacher Access</CardTitle>
-                        <p className="text-sm text-text-muted mt-2">Secure login for faculty members</p>
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-6">
-                    <form className="space-y-5" onSubmit={handleSubmit}>
+
+                    {/* Form */}
+                    <form className="space-y-4" onSubmit={handleSubmit}>
                         <Input
                             label="Username"
                             type="text"
@@ -55,7 +64,6 @@ export default function TeacherLogin() {
                             onChange={(e) => setUsername(e.target.value)}
                             required
                             placeholder="Enter your ID"
-                            className="bg-background-dark/50 border-surface-dark focus:border-primary/50"
                         />
                         <Input
                             label="Password"
@@ -64,20 +72,19 @@ export default function TeacherLogin() {
                             onChange={(e) => setPassword(e.target.value)}
                             required
                             placeholder="••••••••"
-                            className="bg-background-dark/50 border-surface-dark focus:border-primary/50"
                         />
-                        <Button type="submit" className="w-full h-11 text-base shadow-glare" isLoading={loading}>
-                            Sign In <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
+                        <div className="pt-3">
+                            <Button type="submit" size="lg" className="w-full gap-2" isLoading={loading}>
+                                Sign In <ArrowRight className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </form>
 
-                    <div className="mt-6 text-center">
-                        <p className="text-xs text-text-muted">
-                            Restricted to authorized personnel only.
-                        </p>
-                    </div>
-                </CardContent>
-            </Card>
+                    <p className="text-center text-xs text-text-muted">
+                        Restricted to authorized personnel only.
+                    </p>
+                </div>
+            </div>
         </div>
     );
 }

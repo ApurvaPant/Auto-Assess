@@ -5,26 +5,28 @@ import { Loader2 } from 'lucide-react';
 const Button = React.forwardRef(({ className, variant = 'primary', size = 'md', isLoading, children, disabled, ...props }, ref) => {
 
   const variants = {
-    primary: "bg-primary hover:bg-primary/90 text-white shadow-soft hover:shadow-lg transition-all duration-200 border border-transparent",
-    secondary: "bg-secondary hover:bg-secondary/90 text-white shadow-soft hover:shadow-lg transition-all duration-200 border border-transparent",
-    outline: "border border-white/10 bg-transparent hover:bg-white/5 text-text-primary",
-    ghost: "text-text-muted hover:text-primary hover:bg-primary/5",
-    danger: "bg-error text-white hover:bg-error/90 shadow-sm",
+    primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
+    secondary: "bg-overlay/10 text-text-primary hover:bg-overlay/15 border border-overlay/10",
+    outline: "border border-overlay/15 bg-transparent hover:bg-overlay/5 text-text-primary",
+    ghost: "text-text-muted hover:text-text-primary hover:bg-overlay/5",
+    danger: "bg-error text-white hover:bg-error/90",
   };
 
   const sizes = {
-    sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 py-2",
-    lg: "h-12 px-6 text-lg",
+    icon: "h-9 w-9 p-0",
+    sm: "h-8 px-3.5 text-xs",
+    md: "h-10 px-4 text-sm",
+    lg: "h-11 px-6 text-sm",
+    default: "h-10 px-4 text-sm",
   };
 
   return (
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center rounded-lg font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex items-center justify-center rounded-md font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40",
         variants[variant],
-        sizes[size],
+        sizes[size] || sizes.md,
         className
       )}
       disabled={disabled || isLoading}

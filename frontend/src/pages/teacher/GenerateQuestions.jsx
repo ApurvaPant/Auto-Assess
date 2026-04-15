@@ -1,18 +1,24 @@
 import { useState, useEffect } from 'react';
-import { generateQuestions, getPackages, generateQuestionsFromText, generateQuestionsFromFile } from '../../api/client';
+import { generateQuestions, getPackages, generateQuestionsFromText, generateQuestionsFromFile, deletePackages, deleteAllPackages } from '../../api/client';
 import toast from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
-import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
-import { Loader2, Upload, FileText, Type, ChevronRight, ChevronDown } from 'lucide-react';
+import { Upload, FileText, Type, ChevronRight, Trash2, CheckSquare, Square, X } from 'lucide-react';
+import { Select } from '../../components/ui/Select';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function GenerateQuestions() {
+    const { classroomId } = useAuth();
     const [availablePackages, setAvailablePackages] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [activeTab, setActiveTab] = useState('topic'); // 'topic', 'text', 'file'
+    const [activeTab, setActiveTab] = useState('topic');
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [selectMode, setSelectMode] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     // Form States
     const [topic, setTopic] = useState('basic list manipulation');
@@ -21,15 +27,13 @@ export default function GenerateQuestions() {
     const [difficulty, setDifficulty] = useState('easy');
     const [nQuestions, setNQuestions] = useState(5);
 
-    useEffect(() => {
-        fetchExistingPackages();
-    }, []);
+    useEffect(() => { fetchExistingPackages(); }, []);
 
     const fetchExistingPackages = async () => {
         try {
-            const response = await getPackages();
+            const response = await getPackages(classroomId);
             setAvailablePackages(response.data);
-        } catch (error) {
+        } catch {
             toast.error("Could not load existing packages.");
         }
     };
@@ -39,18 +43,14 @@ export default function GenerateQuestions() {
         setLoading(true);
         try {
             let response;
-            if (activeTab === 'topic') {
-                response = await generateQuestions(topic, difficulty, nQuestions);
-            } else if (activeTab === 'text') {
-                response = await generateQuestionsFromText(text, difficulty, nQuestions);
-            } else if (activeTab === 'file') {
+            if (activeTab === 'topic') response = await generateQuestions(topic, difficulty, nQuestions, classroomId);
+            else if (activeTab === 'text') response = await generateQuestionsFromText(text, difficulty, nQuestions, classroomId);
+            else if (activeTab === 'file') {
                 if (!file) throw new Error("Please upload a file.");
-                response = await generateQuestionsFromFile(file, nQuestions, difficulty);
+                response = await generateQuestionsFromFile(file, nQuestions, difficulty, classroomId);
             }
-
-            setAvailablePackages(prev => [...response.data, ...prev]); // Prepend new
-            toast.success(`Generated ${response.data.length} questions!`);
-            // Reset fields
+            setAvailablePackages(prev => [...response.data, ...prev]);
+            toast.success(`Generated ${response.data.length} package${response.data.length !== 1 ? 's' : ''}!`);
             if (activeTab === 'file') setFile(null);
             if (activeTab === 'text') setText('');
         } catch (error) {
@@ -60,13 +60,68 @@ export default function GenerateQuestions() {
         }
     };
 
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === availablePackages.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(availablePackages.map(p => p.id)));
+        }
+    };
+
+    const handleDeleteSelected = async () => {
+        if (selectedIds.size === 0) return;
+        if (!window.confirm(`Delete ${selectedIds.size} selected package${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+        setDeleting(true);
+        try {
+            await deletePackages(Array.from(selectedIds));
+            setAvailablePackages(prev => prev.filter(p => !selectedIds.has(p.id)));
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            toast.success(`Deleted ${selectedIds.size} package${selectedIds.size !== 1 ? 's' : ''}.`);
+        } catch {
+            toast.error("Failed to delete packages.");
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const handleClearAll = async () => {
+        if (availablePackages.length === 0) return;
+        if (!window.confirm(`Delete ALL ${availablePackages.length} packages? This cannot be undone.`)) return;
+        setDeleting(true);
+        try {
+            await deleteAllPackages(classroomId);
+            setAvailablePackages([]);
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            toast.success("All packages deleted.");
+        } catch {
+            toast.error("Failed to clear packages.");
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const exitSelectMode = () => {
+        setSelectMode(false);
+        setSelectedIds(new Set());
+    };
+
     const TabButton = ({ id, label, icon: Icon }) => (
         <button
             onClick={() => setActiveTab(id)}
             className={cn(
                 "flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium transition-all rounded-md flex-1",
                 activeTab === id
-                    ? "bg-primary text-white shadow-md shadow-primary/20"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-black/20 font-semibold"
                     : "text-text-muted hover:bg-surface hover:text-text-primary"
             )}
         >
@@ -75,19 +130,21 @@ export default function GenerateQuestions() {
         </button>
     );
 
+    const allSelected = availablePackages.length > 0 && selectedIds.size === availablePackages.length;
+
     return (
         <div className="space-y-8">
-            <div className="flex flex-col gap-2">
-                <h1 className="text-3xl font-bold tracking-tight text-white">Question Generator</h1>
-                <p className="text-text-muted">Create new coding problems using AI.</p>
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight text-text-primary">Question Generator</h1>
+                <p className="text-text-muted mt-1">Create new coding problems using AI.</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* --- Left Column: Generator Controls --- */}
+                {/* Left: Generator Controls */}
                 <div className="lg:col-span-4 space-y-6">
                     <Card>
                         <CardHeader>
-                            <div className="flex space-x-2 bg-background/50 p-1 rounded-lg border border-gray-800">
+                            <div className="flex space-x-2 bg-background/50 p-1 rounded-lg border border-overlay/5">
                                 <TabButton id="topic" label="Topic" icon={Type} />
                                 <TabButton id="text" label="Text" icon={FileText} />
                                 <TabButton id="file" label="File" icon={Upload} />
@@ -95,131 +152,207 @@ export default function GenerateQuestions() {
                         </CardHeader>
                         <CardContent>
                             <form onSubmit={handleGenerate} className="space-y-4">
-
                                 {activeTab === 'topic' && (
-                                    <Input
-                                        label="Topic"
-                                        value={topic}
-                                        onChange={(e) => setTopic(e.target.value)}
-                                        placeholder="e.g. Recursion"
-                                        required
-                                    />
+                                    <Input label="Topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Recursion" required />
                                 )}
-
                                 {activeTab === 'text' && (
                                     <div className="w-full">
-                                        <label className="mb-2 block text-sm font-medium text-text-muted">Syllabus Text</label>
+                                        <label className="mb-2 block text-sm font-semibold text-text-secondary">Syllabus Text</label>
                                         <textarea
                                             value={text}
                                             onChange={(e) => setText(e.target.value)}
                                             rows={6}
                                             required
-                                            className="flex w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+                                            className="flex w-full rounded-xl border border-overlay/15 bg-overlay/[0.04] px-4 py-3 text-sm text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-overlay/20 disabled:opacity-50 resize-none"
                                             placeholder="Paste text here..."
                                         />
                                     </div>
                                 )}
-
                                 {activeTab === 'file' && (
                                     <div className="w-full">
-                                        <label className="mb-2 block text-sm font-medium text-text-muted">Upload (PDF/Image)</label>
-                                        <Input
-                                            type="file"
-                                            accept=".pdf,image/*"
-                                            onChange={(e) => setFile(e.target.files[0])}
-                                            required
-                                            className="cursor-pointer file:cursor-pointer"
-                                        />
+                                        <label className="mb-2 block text-sm font-semibold text-text-secondary">Upload (PDF/Image)</label>
+                                        <Input type="file" accept=".pdf,image/*" onChange={(e) => setFile(e.target.files[0])} required className="cursor-pointer file:cursor-pointer" />
                                     </div>
                                 )}
-
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="w-full">
-                                        <label className="mb-2 block text-sm font-medium text-text-muted">Difficulty</label>
-                                        <select
+                                        <Select
+                                            label="Difficulty"
                                             value={difficulty}
                                             onChange={(e) => setDifficulty(e.target.value)}
-                                            className="flex h-10 w-full rounded-lg border border-gray-700 bg-surface px-3 pr-8 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%239CA3AF%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat"
                                         >
-                                            <option value="easy" className="bg-surface rounded-lg">Easy</option>
-                                            <option value="medium" className="bg-surface rounded-lg">Medium</option>
-                                            <option value="hard" className="bg-surface rounded-lg">Hard</option>
-                                        </select>
+                                            <option value="easy">Easy</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="hard">Hard</option>
+                                        </Select>
                                     </div>
-                                    <Input
-                                        label="Count"
-                                        type="number"
-                                        min="1" max="20"
-                                        value={nQuestions}
-                                        onChange={(e) => setNQuestions(parseInt(e.target.value) || 1)}
-                                        required
-                                    />
+                                    <Input label="Count" type="number" min="1" max="20" value={nQuestions} onChange={(e) => setNQuestions(parseInt(e.target.value) || 1)} required />
                                 </div>
-
-                                <Button type="submit" className="w-full" isLoading={loading}>
-                                    Generate
-                                </Button>
+                                <Button type="submit" className="w-full" isLoading={loading}>Generate</Button>
                             </form>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* --- Right Column: Available Packages --- */}
-                <div className="lg:col-span-8 space-y-6">
-                    <Card className="min-h-[500px] border-none bg-transparent shadow-none">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-white">Generated Packages</h2>
-                            <Badge variant="outline" className="text-text-muted border-gray-700">
-                                {availablePackages.length} Total
-                            </Badge>
+                {/* Right: Packages List */}
+                <div className="lg:col-span-8 space-y-4">
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-text-primary">Generated Packages</h2>
+                            <Badge variant="secondary">{availablePackages.length}</Badge>
                         </div>
 
-                        <div className="space-y-4">
-                            {availablePackages.length === 0 && !loading && (
-                                <div className="text-center py-20 border-2 border-dashed border-gray-800 rounded-xl">
-                                    <p className="text-text-muted">No packages yet. Generate some!</p>
-                                </div>
+                        <div className="flex items-center gap-2">
+                            {selectMode ? (
+                                <>
+                                    {/* Select all */}
+                                    <button
+                                        onClick={toggleSelectAll}
+                                        className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors px-2 py-1.5"
+                                    >
+                                        {allSelected
+                                            ? <CheckSquare className="h-4 w-4 text-primary" />
+                                            : <Square className="h-4 w-4" />
+                                        }
+                                        {allSelected ? 'Deselect All' : 'Select All'}
+                                    </button>
+
+                                    {selectedIds.size > 0 && (
+                                        <Button
+                                            variant="danger"
+                                            size="sm"
+                                            onClick={handleDeleteSelected}
+                                            isLoading={deleting}
+                                            className="gap-1.5"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                            Delete ({selectedIds.size})
+                                        </Button>
+                                    )}
+
+                                    <Button variant="ghost" size="sm" onClick={exitSelectMode} className="gap-1">
+                                        <X className="h-3.5 w-3.5" /> Cancel
+                                    </Button>
+                                </>
+                            ) : (
+                                <>
+                                    {availablePackages.length > 0 && (
+                                        <>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setSelectMode(true)}
+                                                className="gap-1.5"
+                                            >
+                                                <CheckSquare className="h-3.5 w-3.5" /> Select
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={handleClearAll}
+                                                isLoading={deleting}
+                                                className="gap-1.5 border-error/30 text-error hover:bg-error/10 hover:border-error/50"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" /> Clear All
+                                            </Button>
+                                        </>
+                                    )}
+                                </>
                             )}
-
-                            {availablePackages.map((pkg, index) => (
-                                <PackageItem key={pkg.id || index} pkg={pkg} />
-                            ))}
                         </div>
-                    </Card>
+                    </div>
+
+                    {/* Selection count indicator */}
+                    {selectMode && (
+                        <p className="text-xs text-text-muted">
+                            {selectedIds.size === 0
+                                ? 'Click packages to select them'
+                                : `${selectedIds.size} of ${availablePackages.length} selected`}
+                        </p>
+                    )}
+
+                    {/* Package list */}
+                    <div className="space-y-3">
+                        {availablePackages.length === 0 && !loading && (
+                            <div className="text-center py-20 border-2 border-dashed border-overlay/[0.07] rounded-2xl">
+                                <p className="text-text-muted text-sm">No packages yet. Generate some!</p>
+                            </div>
+                        )}
+                        {availablePackages.map((pkg) => (
+                            <PackageItem
+                                key={pkg.id}
+                                pkg={pkg}
+                                selectMode={selectMode}
+                                isSelected={selectedIds.has(pkg.id)}
+                                onToggle={() => toggleSelect(pkg.id)}
+                            />
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-const PackageItem = ({ pkg }) => {
+const PackageItem = ({ pkg, selectMode, isSelected, onToggle }) => {
     const [isOpen, setIsOpen] = useState(false);
 
+    const handleClick = () => {
+        if (selectMode) {
+            onToggle();
+        } else {
+            setIsOpen(!isOpen);
+        }
+    };
+
     return (
-        <div className="rounded-lg border border-gray-800 bg-surface overflow-hidden transition-all duration-200 hover:border-gray-700">
+        <div
+            className={cn(
+                "rounded-2xl border bg-surface overflow-hidden transition-all duration-150",
+                isSelected
+                    ? "border-primary/50 bg-primary/5"
+                    : "border-overlay/[0.07] hover:border-overlay/15"
+            )}
+        >
             <div
-                className="flex items-center justify-between p-4 cursor-pointer bg-surface hover:bg-gray-800/50"
-                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center justify-between p-4 cursor-pointer"
+                onClick={handleClick}
             >
-                <div className="flex items-center space-x-4">
-                    <div className={cn("p-2 rounded-full bg-primary/10 text-primary transition-transform duration-200", isOpen && "rotate-90")}>
-                        <ChevronRight className="h-4 w-4" />
-                    </div>
-                    <div>
-                        <h3 className="text-sm font-semibold text-white">{pkg.title || 'Untitled Question'}</h3>
-                        <div className="flex items-center space-x-2 mt-1">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {/* Checkbox or expand indicator */}
+                    {selectMode ? (
+                        <div className={cn(
+                            "flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-all",
+                            isSelected ? "bg-primary border-primary" : "border-overlay/20 bg-transparent"
+                        )}>
+                            {isSelected && (
+                                <svg className="w-3 h-3 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                        </div>
+                    ) : (
+                        <div className={cn("flex-shrink-0 p-1.5 rounded-lg bg-overlay/5 text-text-muted transition-transform duration-200", isOpen && "rotate-90")}>
+                            <ChevronRight className="h-3.5 w-3.5" />
+                        </div>
+                    )}
+
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-text-primary truncate">{pkg.title || 'Untitled Question'}</p>
+                        <div className="flex items-center gap-2 mt-1">
                             <Badge variant={pkg.difficulty === 'hard' ? 'error' : pkg.difficulty === 'medium' ? 'warning' : 'success'}>
                                 {pkg.difficulty}
                             </Badge>
-                            <span className="text-xs text-text-muted">{pkg.testcases?.length || 0} Test Cases</span>
+                            <span className="text-xs text-text-muted">{pkg.testcases?.length || 0} test cases</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {isOpen && (
-                <div className="p-4 pt-0 border-t border-gray-800/50 bg-gray-900/30">
-                    <div className="prose prose-invert prose-sm max-w-none mt-4 text-gray-300">
+            {isOpen && !selectMode && (
+                <div className="px-4 pb-4 border-t border-overlay/[0.06] pt-3">
+                    <div className="prose prose-invert prose-sm max-w-none text-text-muted">
                         <ReactMarkdown>{pkg.prompt}</ReactMarkdown>
                     </div>
                 </div>

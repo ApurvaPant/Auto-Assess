@@ -38,19 +38,20 @@ apiClient.interceptors.request.use((config) => {
 // --- Teacher APIs ---
 export const loginTeacher = (username, password) => apiClient.post('/teacher/login', { username, password });
 
-export const generateQuestions = (topic, difficulty, n_questions) => {
-  return apiClient.post('/teacher/generate_questions', { topic, difficulty, n_questions });
+export const generateQuestions = (topic, difficulty, n_questions, classroom_id) => {
+  return apiClient.post('/teacher/generate_questions', { topic, difficulty, n_questions, classroom_id });
 };
 
-export const generateQuestionsFromText = (text, difficulty, n_questions) => {
-  return apiClient.post('/teacher/generate_from_text', { text, difficulty, n_questions });
+export const generateQuestionsFromText = (text, difficulty, n_questions, classroom_id) => {
+  return apiClient.post('/teacher/generate_from_text', { text, difficulty, n_questions, classroom_id });
 };
 
-export const generateQuestionsFromFile = (file, n_questions, difficulty) => {
+export const generateQuestionsFromFile = (file, n_questions, difficulty, classroom_id) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('n_questions', n_questions);
   formData.append('difficulty', difficulty);
+  if (classroom_id) formData.append('classroom_id', classroom_id);
 
   return apiClient.post('/teacher/generate_from_file', formData, {
     headers: {
@@ -59,36 +60,59 @@ export const generateQuestionsFromFile = (file, n_questions, difficulty) => {
   });
 };
 
-export const getPackages = () => apiClient.get('/teacher/packages');
-export const getAssignments = () => apiClient.get('/teacher/assignments');
-export const createAssignment = (assignment_name, package_ids) => apiClient.post('/teacher/create_assignment', { assignment_name, package_ids });
+// Teacher Classroom APIs
+export const createClassroom = (name) => apiClient.post('/teacher/classrooms', { name });
+export const getClassrooms = () => apiClient.get('/teacher/classrooms');
+export const deleteClassroom = (id) => apiClient.delete(`/teacher/classrooms/${id}`);
+export const getClassroomStudents = (classroomId) => apiClient.get(`/teacher/classrooms/${classroomId}/students`);
+
+export const getPackages = (classroomId) => apiClient.get('/teacher/packages', { params: { classroom_id: classroomId } });
+export const deletePackages = (packageIds) => apiClient.delete('/teacher/packages', { data: packageIds });
+export const deleteAllPackages = (classroomId) => apiClient.delete('/teacher/packages/all', { params: { classroom_id: classroomId } });
+export const getAssignments = (classroomId) => apiClient.get('/teacher/assignments', { params: { classroom_id: classroomId } });
+export const createAssignment = (assignment_name, package_ids, classroom_id, deadline = null) => apiClient.post('/teacher/create_assignment', { assignment_name, package_ids, classroom_id, deadline });
+export const deleteAssignment = (assignmentId) => apiClient.delete(`/teacher/assignments/${assignmentId}`);
+export const getAssignmentDetails = (assignmentId) => apiClient.get(`/teacher/assignments/${assignmentId}/details`);
 export const getResults = (assignmentId) => apiClient.get(`/teacher/results/${assignmentId}`);
-export const getTeacherCodes = () => apiClient.get('/teacher/codes');
+export const getStats = (classroomId) => apiClient.get('/teacher/stats', { params: { classroom_id: classroomId } });
 export const releaseResults = (assignmentId, alpha = 0.6, beta = 0.4, gamma = 10) => apiClient.post(`/teacher/assignments/${assignmentId}/release`, { alpha, beta, gamma });
 export const getCodeAnalysis = (submissionId) => apiClient.get(`/teacher/analyze/${submissionId}`);
+export const getPlagiarismReport = (assignmentId) => apiClient.get(`/teacher/assignments/${assignmentId}/plagiarism`);
+export const getAIDetection = (submissionId) => apiClient.get(`/teacher/ai-detect/${submissionId}`);
+export const getStudentPortfolio = (classroomId, studentId) => apiClient.get(`/teacher/classrooms/${classroomId}/students/${studentId}/portfolio`);
+export const generateStudentAIInsights = (classroomId, studentId) => apiClient.post(`/teacher/classrooms/${classroomId}/students/${studentId}/ai-insights`);
 
 
 // --- Student APIs ---
-export const loginStudent = (roll, dob) => apiClient.post('/student/login', { roll, dob });
-export const getStudentAssignments = () => apiClient.get('/student/assignments');
-export const getStudentAssignment = (assignmentId, roll) => apiClient.get(`/student/assignment/${assignmentId}/${roll}`);
-export const runCode = (roll, assignment_id, code) => apiClient.post('/run', { roll, assignment_id, code });
-export const submitSolution = (roll, assignment_id, code) => apiClient.post('/submit', { roll, assignment_id, code });
-export const getStudentAnalysis = (assignmentId, roll) => apiClient.get(`/student/analyze/${assignmentId}/${roll}`);
+export const signupStudent = (email, name, password) => apiClient.post('/student/signup', { email, name, password });
+export const loginStudent = (email, password) => apiClient.post('/student/login', { email, password });
 
-// This is the function that was causing the error
-export const changeStudentDob = (roll, new_dob, code) => apiClient.post('/student/change_dob', { roll, new_dob, code });
+export const joinClassroom = (code) => apiClient.post('/student/join', { code });
+export const getStudentClassrooms = () => apiClient.get('/student/classrooms');
 
-export const updateStudentProfile = (name, new_dob, code) => apiClient.post('/student/profile', { name, new_dob, code });
-export const getStudentProfile = () => apiClient.get('/student/profile');
+export const getStudentAssignments = (classroomId) => apiClient.get('/student/assignments', { params: classroomId ? { classroom_id: classroomId } : {} });
+export const getStudentAssignment = (assignmentId) => apiClient.get(`/student/assignment/${assignmentId}`);
+export const runCode = (assignment_id, code) => apiClient.post('/run', { assignment_id, code });
+export const submitSolution = (assignment_id, code) => apiClient.post('/submit', { assignment_id, code });
+export const getStudentAnalysis = (assignmentId) => apiClient.get(`/student/analyze/${assignmentId}`);
+export const getStudentResult = (assignmentId) => apiClient.get(`/student/result/${assignmentId}`);
 
-export const getStudentResult = (assignmentId, roll) => apiClient.get(`/teacher/results/${assignmentId}`).then(response => {
-  const results = response.data;
-  const myResult = results.find(res => res.roll === parseInt(roll, 10));
-  if (!myResult) {
-    throw new Error("Result not found");
-  }
-  return { data: myResult };
-});
+export const updateStudentProfile = (name, current_password, new_password) => apiClient.post('/student/profile', { name, current_password, new_password });
+
+export const uploadStudentPhoto = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/student/profile/photo', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+
+// Doubt APIs
+export const askDoubt = (classroomId, question, assignmentId = null) =>
+  apiClient.post(`/student/classroom/${classroomId}/doubts`, { question, assignment_id: assignmentId });
+export const getStudentDoubts = (classroomId) =>
+  apiClient.get(`/student/classroom/${classroomId}/doubts`);
+export const getClassroomDoubts = (classroomId) =>
+  apiClient.get(`/teacher/classroom/${classroomId}/doubts`);
+export const replyToDoubt = (doubtId, reply) =>
+  apiClient.post(`/teacher/doubts/${doubtId}/reply`, { reply });
 
 export default apiClient;

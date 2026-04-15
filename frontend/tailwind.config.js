@@ -8,41 +8,49 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#09090b', // Rich Black
-        'background-dark': '#09090b',
-        surface: '#18181b',    // Zinc 900
-        'surface-dark': '#18181b',
+        background: 'rgb(var(--color-bg) / <alpha-value>)',
+        'background-dark': 'rgb(var(--color-bg) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface) / <alpha-value>)',
+        'surface-dark': 'rgb(var(--color-surface-dark) / <alpha-value>)',
         primary: {
-          DEFAULT: '#6366f1',  // Indigo 500
-          hover: '#4f46e5',    // Indigo 600
-          foreground: '#fafafa',
+          DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
+          hover: 'rgb(var(--color-primary-hover) / <alpha-value>)',
+          foreground: 'rgb(var(--color-primary-fg) / <alpha-value>)',
         },
         secondary: {
-          DEFAULT: '#3b82f6',  // Blue 500
-          hover: '#2563eb',    // Blue 600
-          foreground: '#fafafa',
+          DEFAULT: 'rgb(var(--color-secondary) / <alpha-value>)',
+          hover: 'rgb(var(--color-secondary-hover) / <alpha-value>)',
+          foreground: 'rgb(var(--color-secondary-fg) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: '#8b5cf6',  // Violet 500
-          hover: '#7c3aed',
+          DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
+          hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
+          foreground: 'rgb(var(--color-secondary-fg) / <alpha-value>)',
         },
+        overlay: 'rgb(var(--color-overlay) / <alpha-value>)',
         success: '#10b981',
         warning: '#f59e0b',
         error: '#ef4444',
         text: {
-          primary: '#fafafa',  // Zinc 50
-          secondary: '#a1a1aa',// Zinc 400
-          muted: '#71717a',    // Zinc 500
-          inverse: '#09090b',
+          primary: 'rgb(var(--color-text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
+          inverse: 'rgb(var(--color-text-primary) / <alpha-value>)',
         }
       },
       fontFamily: {
-        sans: ['Manrope', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+      borderRadius: {
+        '3xl': '1.5rem',
+        '4xl': '2rem',
+      },
       boxShadow: {
-        'soft': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        'glow': '0 0 20px rgba(99, 102, 241, 0.15)',
+        'soft': '0 2px 8px rgba(0, 0, 0, 0.08)',
+        'card': '0 1px 3px rgba(0,0,0,0.08)',
+        'glow': '0 0 24px rgba(0, 0, 0, 0.06)',
+        'soft-dark': '0 2px 8px rgba(0, 0, 0, 0.35)',
       }
     },
   },

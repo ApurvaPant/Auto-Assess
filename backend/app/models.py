@@ -1,35 +1,52 @@
 from typing import List, Optional, Dict, Any
 from sqlmodel import Field, SQLModel, Relationship, JSON, Column
-from datetime import date, datetime
+from datetime import datetime
 
 class Teacher(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True, unique=True)
     hashed_password: str
+    classrooms: List["Classroom"] = Relationship(back_populates="teacher")
 
 class Student(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    roll: int = Field(unique=True, index=True)
-    username: str = Field(unique=True, index=True)
-    name: Optional[str] = Field(default=None) # Added name field
-    dob: date 
-    hashed_dob: str 
+    email: str = Field(unique=True, index=True)
+    name: str
+    hashed_password: str
+    photo_url: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    classroom_memberships: List["ClassroomStudent"] = Relationship(back_populates="student")
     student_assignments: List["StudentAssignment"] = Relationship(back_populates="student")
-    teacher_code: Optional["TeacherCode"] = Relationship(back_populates="student")
+    doubts: List["Doubt"] = Relationship(back_populates="student")
 
-class TeacherCode(SQLModel, table=True):
+class Classroom(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    hashed_code: str = Field(unique=True)
-    is_used: bool = Field(default=False)  # True when uses_remaining reaches 0
-    uses_remaining: int = Field(default=2)  # Code can be used 2 times
-    student_id: Optional[int] = Field(default=None, foreign_key="student.id", unique=True)
-    student: Optional["Student"] = Relationship(back_populates="teacher_code")
+    name: str
+    code: str = Field(unique=True, index=True)  # 6-char alphanumeric
+    teacher_id: int = Field(foreign_key="teacher.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    teacher: "Teacher" = Relationship(back_populates="classrooms")
+    members: List["ClassroomStudent"] = Relationship(back_populates="classroom")
+    packages: List["Package"] = Relationship(back_populates="classroom")
+    assignments: List["Assignment"] = Relationship(back_populates="classroom")
+    doubts: List["Doubt"] = Relationship(back_populates="classroom")
+
+class ClassroomStudent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    classroom_id: int = Field(foreign_key="classroom.id")
+    student_id: int = Field(foreign_key="student.id")
+    joined_at: datetime = Field(default_factory=datetime.utcnow)
+    classroom: "Classroom" = Relationship(back_populates="members")
+    student: "Student" = Relationship(back_populates="classroom_memberships")
 
 class Package(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     prompt: str
     difficulty: str
+    is_deleted: bool = Field(default=False)
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    classroom: Optional["Classroom"] = Relationship(back_populates="packages")
     testcases: List["TestCase"] = Relationship(back_populates="package")
     student_assignments: List["StudentAssignment"] = Relationship(back_populates="package")
 
@@ -46,10 +63,13 @@ class Assignment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    deadline: Optional[datetime] = Field(default=None)
     results_released: bool = Field(default=False)
     weight_test: float = Field(default=0.6)
     weight_quality: float = Field(default=0.4)
     weight_penalty: float = Field(default=10.0)
+    classroom_id: Optional[int] = Field(default=None, foreign_key="classroom.id")
+    classroom: Optional["Classroom"] = Relationship(back_populates="assignments")
     student_assignments: List["StudentAssignment"] = Relationship(back_populates="assignment")
 
 class StudentAssignment(SQLModel, table=True):
@@ -76,9 +96,25 @@ class Submission(SQLModel, table=True):
     error_counts: Dict[str, Any] = Field(sa_column=Column(JSON))
     student_assignment: "StudentAssignment" = Relationship(back_populates="submission")
 
-Package.model_rebuild()
+class Doubt(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    student_id: int = Field(foreign_key="student.id")
+    classroom_id: int = Field(foreign_key="classroom.id")
+    assignment_id: Optional[int] = Field(default=None, foreign_key="assignment.id")
+    question: str
+    reply: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    replied_at: Optional[datetime] = Field(default=None)
+    student: "Student" = Relationship(back_populates="doubts")
+    classroom: "Classroom" = Relationship(back_populates="doubts")
+
+Teacher.model_rebuild()
 Student.model_rebuild()
-TeacherCode.model_rebuild()
+Classroom.model_rebuild()
+ClassroomStudent.model_rebuild()
+Package.model_rebuild()
+TestCase.model_rebuild()
 Assignment.model_rebuild()
 StudentAssignment.model_rebuild()
 Submission.model_rebuild()
+Doubt.model_rebuild()

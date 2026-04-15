@@ -2,12 +2,13 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 
 const badgeVariants = {
-  default: "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
-  secondary: "border-transparent bg-secondary text-white hover:bg-secondary/80",
-  outline: "text-text-primary",
-  success: "border-transparent bg-success/20 text-success hover:bg-success/30",
-  warning: "border-transparent bg-warning/20 text-warning hover:bg-warning/30",
-  error: "border-transparent bg-error/20 text-error hover:bg-error/30",
+  default: "border-transparent bg-primary text-primary-foreground",
+  secondary: "border-transparent bg-overlay/10 text-text-secondary",
+  outline: "border-overlay/15 text-text-secondary bg-transparent",
+  ghost: "border-transparent bg-transparent text-text-muted",
+  success: "border-transparent bg-success/15 text-success",
+  warning: "border-transparent bg-warning/15 text-warning",
+  error: "border-transparent bg-error/15 text-error",
 };
 
 function Badge({ className, variant = "default", ...props }) {
